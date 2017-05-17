@@ -18,9 +18,9 @@ class generativeSSL:
     	## Step 1: define the placeholders for input and output
     	self.z_dim = Z_DIM                                  # stochastic inputs dimension       
     	self.n_h = NUM_HIDDEN                               # number of hidden layers per network
-    	self.lr = LEARNING_RATE 							# learning rate
-    	self.alpha = ALHPA 									# weighting for additional term
-    	self.Z_SAMPLES = Z_SAMPLES 							# number of monte-carlo samples
+    	self.lr = LEARNING_RATE 			    # learning rate
+    	self.alpha = ALHPA 				    # weighting for additional term
+    	self.Z_SAMPLES = Z_SAMPLES 			    # number of monte-carlo samples
     	self.NUM_STEPS = NUM_STEPS                          # training steps
     	self.LOGDIR = self._allocate_directory()            # logging directory
     
