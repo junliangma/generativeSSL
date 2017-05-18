@@ -7,7 +7,7 @@ from sklearn.datasets import make_moons
 import pickle
 import pdb 
 
-x, y = make_moons(int(1e4), noise=0.15)
+x, y = make_moons(int(1e4), noise=0.1)
 y = np.eye(2)[y]
 data = {'x':x, 'y':y}
 target = './data/moons.pkl'

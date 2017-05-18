@@ -15,7 +15,7 @@ y - np array: N rows, k columns (one-hot encoding)
 
 class SSL_DATA:
     """ Class for appropriate data structures """
-    def __init__(self, x, y, train_proportion=0.7, labeled_proportion=0.1, 
+    def __init__(self, x, y, train_proportion=0.7, labeled_proportion=0.333, 
 		     LABELED_BATCHSIZE=7, UNLABELED_BATCHSIZE=63, dataset='moons'):
 	
         self.N = int(x.shape[0] )
@@ -23,6 +23,7 @@ class SSL_DATA:
 	self.NUM_CLASSES = y.shape[1]
 	self.NAME = dataset
 	self.TRAIN_SIZE = int(np.round(train_proportion * self.N))
+	self.TEST_SIZE = int(self.N-self.TRAIN_SIZE)
 	self.NUM_LABELED = int(np.round(labeled_proportion * self.TRAIN_SIZE))
 	self.NUM_UNLABELED = int(self.TRAIN_SIZE - self.NUM_LABELED)
 	self.LABELED_BATCHSIZE = int(LABELED_BATCHSIZE)
@@ -34,6 +35,7 @@ class SSL_DATA:
 
 	# create appropriate data dictionaries
 	self.data = {}
+	self.data['x_train'], self.data['y_train'] = xtrain, ytrain
 	self.data['x_u'], self.data['y_u'] = x_unlabeled, y_unlabeled
 	self.data['x_l'], self.data['y_l'] = x_labeled, y_labeled
 	self.data['x_test'], self.data['y_test'] = xtest, ytest
