@@ -13,7 +13,7 @@ import pdb
 
 class DNN:
     """ Class defining our generative model """
-    def __init__(self, LEARNING_RATE=0.05, ARCHITECTURE=[2], BATCH_SIZE=128, NUM_EPOCHS=10, nonlinearity=tf.nn.relu):
+    def __init__(self, LEARNING_RATE=0.05, ARCHITECTURE=[10], BATCH_SIZE=128, NUM_EPOCHS=10, nonlinearity=tf.nn.relu):
     	## Step 1: define the placeholders for input and output
     	self.lr = LEARNING_RATE	          # learning rate
         self.ARCHITECTURE = ARCHITECTURE  # network architecture

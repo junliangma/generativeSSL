@@ -67,11 +67,20 @@ class generativeSSL:
                 total_loss, l_l, l_u, l_e = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb
                 if Data._epochs_labeled > epoch:
 		    epoch += 1
-		    if self.verbose == 1:
+		    if self.verbose == 0:
 		    	self._hook_loss(epoch, SKIP_STEP, total_loss, l_l, l_u, l_e)
         	        total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
-        	    elif self.verbose == 0:
-		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
+        	    
+		    elif self.verbose == 1:
+		        acc_train, acc_test,  = sess.run([train_acc, test_acc],
+						         feed_dict = {self.x_train:Data.data['x_train'],
+						     	              self.y_train:Data.data['y_train'],
+								      self.x_test:Data.data['x_test'],
+								      self.y_test:Data.data['y_test']})
+		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
+        	    
+		    elif self.verbose == 2:
+		        acc_train, acc_test,  = sess.run([train_acci_q, test_acc_q],
 						         feed_dict = {self.x_train:Data.data['x_train'],
 						     	              self.y_train:Data.data['y_train'],
 								      self.x_test:Data.data['x_test'],
