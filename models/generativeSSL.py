@@ -13,16 +13,19 @@ import pdb
 
 class generativeSSL:
     """ Class defining our generative model """
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.0005, NUM_HIDDEN=6, ALHPA=0.0, 
-		 LABELED_BATCH_SIZE=32, UNLABELED_BATCH_SIZE=128, NUM_STEPS=10000, Z_SAMPLES=1):
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALHPA=0.1, NONLINEARITY=tf.nn.relu
+		 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_STEPS=10000, Z_SAMPLES=1):
     	## Step 1: define the placeholders for input and output
-    	self.Z_DIM = Z_DIM                                  # stochastic inputs dimension       
-    	self.NUM_HIDDEN = NUM_HIDDEN                        # number of hidden layers per network
-    	self.lr = LEARNING_RATE 			    # learning rate
-    	self.alpha = ALHPA 				    # weighting for additional term
-    	self.Z_SAMPLES = Z_SAMPLES 			    # number of monte-carlo samples
-    	self.NUM_STEPS = NUM_STEPS                          # training steps
-    	self.LOGDIR = self._allocate_directory()            # logging directory
+    	self.Z_DIM = Z_DIM                                   # stochastic inputs dimension       
+    	self.NUM_HIDDEN = NUM_HIDDEN                         # number of hidden layers per network
+    	self.NONLINEARITY = NONLINEARITY		     # activation functions	
+    	self.lr = LEARNING_RATE 			     # learning rate
+    	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
+	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
+    	self.alpha = ALHPA 				     # weighting for additional term
+    	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
+    	self.NUM_STEPS = NUM_STEPS                           # training steps
+    	self.LOGDIR = self._allocate_directory()             # logging directory
     
 
     def fit(self, Data):
@@ -54,7 +57,7 @@ class generativeSSL:
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
             writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
             for index in xrange(self.NUM_STEPS):
-                batch = Data.next_batch()
+                batch = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
             	_, loss_batch, l_lb, l_ub, l_eb = sess.run([self.optimizer, self.loss, L_l, L_u, L_e], 
             			     	     		    feed_dict={self.x_labeled: batch[0], 
 		           		    	 		       self.labels: batch[1],
@@ -91,78 +94,9 @@ class generativeSSL:
 	return y_, yq
 
 
-    def compute_acc(self, x, y):
-	y_, yq = self.predict(x)
-	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	acc_q =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(yq,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	return acc, acc_q
-
-    
-
-    def _process_data(self, data):
-    	""" Extract relevant information from data_gen """
-    	self.TRAINING_SIZE = data.TRAIN_SIZE   			 # training set size
-	self.TEST_SIZE = data.TEST_SIZE                          # test set size
-	self.NUM_LABELED =data.NUM_LABELED     			 # labeled instances
-	self.X_DIM = data.INPUT_DIM            			 # input dimension     
-	self.NUM_CLASSES = data.NUM_CLASSES                      # number of classes
-	self.LABELED_BATCH_SIZE = data.LABELED_BATCHSIZE         # labeled batch size 
-	self.UNLABELED_BATCH_SIZE = data.UNLABELED_BATCHSIZE     # labeled batch size 
-	self.alpha = self.alpha / self.NUM_LABELED               # weighting for additional term
-
-
-    def _create_placeholders(self):
- 	""" Create input/output placeholders """
-	self.x_labeled = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.X_DIM], name='labeled_input')
-    	self.x_unlabeled = tf.placeholder(tf.float32, shape=[self.UNLABELED_BATCH_SIZE, self.X_DIM], name='unlabeled_input')
-    	self.labels = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.NUM_CLASSES], name='labels')
-	self.x_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.X_DIM], name='x_train')
-	self.y_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.NUM_CLASSES], name='y_train')
-	self.x_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.X_DIM], name='x_test')
-	self.y_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.NUM_CLASSES], name='y_test')
-    	
-
-
-    def _initialize_networks(self):
-    	""" Initialize all model networks """
-    	self.Pz_x = self._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
-    	self.Pzx_y = self._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
-    	self.Qxy_z = self._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
-    	self.Qx_y = self._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
-
-    
-    def _xavier_initializer(self, fan_in, fan_out, constant=1): 
-    	""" Xavier initialization of network weights"""
-	low = -constant*np.sqrt(6.0/(fan_in + fan_out)) 
-    	high = constant*np.sqrt(6.0/(fan_in + fan_out))
-    	return tf.random_uniform((fan_in, fan_out), 
-        	                  minval=low, maxval=high, 
-            	                  dtype=tf.float32)
-
-
-    def _init_Gauss_net(self, n_in, n_hidden, n_out):
-	""" Initialize the weights of a 2-layer network parameterizeing a Gaussian """
-	W1 = tf.Variable(self._xavier_initializer(n_in, n_hidden))
-	W2_mean = tf.Variable(self._xavier_initializer(n_hidden, n_out))
-	W2_var = tf.Variable(self._xavier_initializer(n_hidden, n_out))
-	b1 = tf.Variable(tf.zeros([n_hidden]))
-	b2_mean = tf.Variable(tf.zeros([n_out]))
-	b2_var = tf.Variable(tf.zeros([n_out]))
-	return {'W_in':W1, 'W_out_mean':W2_mean, 'W_out_var':W2_var, 
-	        'bias_in':b1, 'bias_out_mean':b2_mean, 'bias_out_var':b2_var}
-
-
-    def _init_Cat_net(self, n_in, n_hidden, n_out):
-	""" Initialize the weights of a 2-layer network parameterizeing a Categorical """
-	W1 = tf.Variable(self._xavier_initializer(n_in, n_hidden))
-	W2 = tf.Variable(self._xavier_initializer(n_hidden, n_out))
-	b1 = tf.Variable(tf.zeros([n_hidden]))
-	b2 = tf.Variable(tf.zeros([n_out]))
-	return {'W_in':W1, 'W_out':W2, 'bias_in':b1, 'bias_out':b2}
-
     def _forward_pass_Gauss(self, x, weights):
 	""" Forward pass through the network with weights as a dictionary """
-	h = tf.nn.relu(tf.add(tf.matmul(x, weights['W_in']), weights['bias_in']))
+	h = self.NONLINEARITY(tf.add(tf.matmul(x, weights['W_in']), weights['bias_in']))
 	mean = tf.add(tf.matmul(h, weights['W_out_mean']), weights['bias_out_mean'])
 	log_var = tf.nn.softplus(tf.add(tf.matmul(h, weights['W_out_var']), weights['bias_out_var']))
 	return (mean, log_var)
@@ -170,14 +104,12 @@ class generativeSSL:
 
     def _forward_pass_Cat(self, x, weights):
 	""" Forward pass through the network with weights as a dictionary """
-	h = tf.nn.relu(tf.add(tf.matmul(x, weights['W_in']), weights['bias_in']))
-	out = tf.nn.softmax(tf.add(tf.matmul(h, weights['W_out']), weights['bias_out']))
-	return (out)
+	return tf.nn.softmax(self._forward_pass_Cat_logits)
 
 
     def _forward_pass_Cat_logits(self, x, weights):
 	""" Forward pass through the network with weights as a dictionary """
-	h = tf.nn.softplus(tf.add(tf.matmul(x, weights['W_in']), weights['bias_in']))
+	h = self.NONLINEARITY(tf.add(tf.matmul(x, weights['W_in']), weights['bias_in']))
 	out = tf.add(tf.matmul(h, weights['W_out']), weights['bias_out'])
 	return out
 
@@ -211,7 +143,7 @@ class generativeSSL:
 
     def _qxy_loss(self, x, y):
 	y_ = self._forward_pass_Cat_logits(x, self.Qx_y)
-	return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_))
+	return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_))
 
 
     def _compute_logpx(self, x, z):
@@ -233,6 +165,74 @@ class generativeSSL:
 	mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)
 	prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)
 	return tf.contrib.distributions.kl(mvnQ, prior)
+
+
+    def _init_Gauss_net(self, n_in, n_hidden, n_out):
+	""" Initialize the weights of a 2-layer network parameterizeing a Gaussian """
+	W1 = tf.Variable(self._xavier_initializer(n_in, n_hidden))
+	W2_mean = tf.Variable(self._xavier_initializer(n_hidden, n_out))
+	W2_var = tf.Variable(self._xavier_initializer(n_hidden, n_out))
+	b1 = tf.Variable(tf.zeros([n_hidden]))
+	b2_mean = tf.Variable(tf.zeros([n_out]))
+	b2_var = tf.Variable(tf.zeros([n_out]))
+	return {'W_in':W1, 'W_out_mean':W2_mean, 'W_out_var':W2_var, 
+	        'bias_in':b1, 'bias_out_mean':b2_mean, 'bias_out_var':b2_var}
+
+
+    def _init_Cat_net(self, n_in, n_hidden, n_out):
+	""" Initialize the weights of a 2-layer network parameterizeing a Categorical """
+	W1 = tf.Variable(self._xavier_initializer(n_in, n_hidden))
+	W2 = tf.Variable(self._xavier_initializer(n_hidden, n_out))
+	b1 = tf.Variable(tf.zeros([n_hidden]))
+	b2 = tf.Variable(tf.zeros([n_out]))
+	return {'W_in':W1, 'W_out':W2, 'bias_in':b1, 'bias_out':b2}
+    
+
+
+    def compute_acc(self, x, y):
+	y_, yq = self.predict(x)
+	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
+	acc_q =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(yq,axis=1), tf.argmax(y, axis=1)), tf.float32))
+	return acc, acc_q
+
+
+    def _process_data(self, data):
+    	""" Extract relevant information from data_gen """
+    	self.TRAINING_SIZE = data.TRAIN_SIZE   			 # training set size
+	self.TEST_SIZE = data.TEST_SIZE                          # test set size
+	self.NUM_LABELED =data.NUM_LABELED     			 # labeled instances
+	self.X_DIM = data.INPUT_DIM            			 # input dimension     
+	self.NUM_CLASSES = data.NUM_CLASSES                      # number of classes
+	self.alpha = self.alpha / self.NUM_LABELED               # weighting for additional term
+
+
+    def _create_placeholders(self):
+ 	""" Create input/output placeholders """
+	self.x_labeled = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.X_DIM], name='labeled_input')
+    	self.x_unlabeled = tf.placeholder(tf.float32, shape=[self.UNLABELED_BATCH_SIZE, self.X_DIM], name='unlabeled_input')
+    	self.labels = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.NUM_CLASSES], name='labels')
+	self.x_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.X_DIM], name='x_train')
+	self.y_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.NUM_CLASSES], name='y_train')
+	self.x_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.X_DIM], name='x_test')
+	self.y_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.NUM_CLASSES], name='y_test')
+    	
+
+
+    def _initialize_networks(self):
+    	""" Initialize all model networks """
+    	self.Pz_x = self._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
+    	self.Pzx_y = self._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+    	self.Qxy_z = self._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
+    	self.Qx_y = self._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+
+    
+    def _xavier_initializer(self, fan_in, fan_out, constant=1): 
+    	""" Xavier initialization of network weights"""
+	low = -constant*np.sqrt(6.0/(fan_in + fan_out)) 
+    	high = constant*np.sqrt(6.0/(fan_in + fan_out))
+    	return tf.random_uniform((fan_in, fan_out), 
+        	                  minval=low, maxval=high, 
+            	                  dtype=tf.float32)
 
 
     def _generate_class(self, k, num):
