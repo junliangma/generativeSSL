@@ -39,10 +39,11 @@ class generativeSSL:
         self._initialize_networks()
         
         ## Step 3: define the loss function
+	self._compute_loss_weights()
         L_l = tf.reduce_sum(self._labeled_loss(self.x_labeled, self.labels))
         L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
         L_e = self._qxy_loss(self.x_labeled, self.labels)
-        self.loss = -tf.add_n([L_l , L_u , self.alpha*L_e], name='loss')
+        self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e], name='loss')
         
         ## Step 4: define optimizer
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
@@ -66,11 +67,11 @@ class generativeSSL:
                 total_loss, l_l, l_u, l_e = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb
                 if Data._epochs_labeled > epoch:
 		    epoch += 1
-		    if self.verbose==1:
+		    if self.verbose == 1:
 		    	self._hook_loss(epoch, SKIP_STEP, total_loss, l_l, l_u, l_e)
         	        total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
-        	    else:
-		        acc_train, acc_test,  = sess.run([train_acc, test_acc],
+        	    elif self.verbose == 0:
+		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
 						         feed_dict = {self.x_train:Data.data['x_train'],
 						     	              self.y_train:Data.data['y_train'],
 								      self.x_test:Data.data['x_test'],
@@ -82,11 +83,15 @@ class generativeSSL:
     def predict(self, x, n_iters=10):
 	y_ = self._forward_pass_Cat(x, self.Qx_y)
 	yq = y_
+	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	y_samps = tf.expand_dims(y_, axis=2)
 	for i in range(n_iters):
 	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
 	    h = tf.concat([x, z], axis=1)
 	    y_ = self._forward_pass_Cat(h, self.Pzx_y)
-	return y_, yq
+	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
+	return tf.reduce_mean(y_samps, axis=2), yq
 
 
     def _forward_pass_Gauss(self, x, weights):
@@ -125,6 +130,7 @@ class generativeSSL:
 	klz = self._gauss_kl(q_mean, tf.exp(q_log_var))
 	return tf.add_n([logpx , logpy , -klz])
 
+
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
 	weights = self._forward_pass_Cat(x, self.Qx_y)
@@ -138,7 +144,7 @@ class generativeSSL:
 
     def _qxy_loss(self, x, y):
 	y_ = self._forward_pass_Cat_logits(x, self.Qx_y)
-	return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_))
+	return -tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_))
 
 
     def _compute_logpx(self, x, z):
@@ -151,8 +157,8 @@ class generativeSSL:
     def _compute_logpy(self, y, x, z):
 	""" compute the likelihood of every element in y under p(y|x,z) """
 	h = tf.concat([x,z], axis=1)
-	y_ = self._forward_pass_Cat(h, self.Pzx_y)
-	return tf.reduce_sum(tf.multiply(y, tf.log(y_)), axis=1)
+	y_ = self._forward_pass_Cat_logits(h, self.Pzx_y)
+	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
     def _gauss_kl(self, mean, sigma):
 	""" compute the KL-divergence of a Gaussian against N(0,1) """
@@ -160,6 +166,13 @@ class generativeSSL:
 	mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)
 	prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)
 	return tf.contrib.distributions.kl(mvnQ, prior)
+
+    
+    def _compute_loss_weights(self):
+    	""" Compute scaling weights for the loss function """
+        self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
+        self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+
 
 
     def _init_Gauss_net(self, n_in, n_hidden, n_out):
@@ -193,9 +206,11 @@ class generativeSSL:
 
     def _process_data(self, data):
     	""" Extract relevant information from data_gen """
+    	self.N = data.N
     	self.TRAINING_SIZE = data.TRAIN_SIZE   			 # training set size
 	self.TEST_SIZE = data.TEST_SIZE                          # test set size
-	self.NUM_LABELED =data.NUM_LABELED     			 # labeled instances
+	self.NUM_LABELED = data.NUM_LABELED    			 # number of labeled instances
+	self.NUM_UNLABELED = data.NUM_UNLABELED                  # number of unlabeled instances
 	self.X_DIM = data.INPUT_DIM            			 # input dimension     
 	self.NUM_CLASSES = data.NUM_CLASSES                      # number of classes
 	self.alpha = self.alpha / self.NUM_LABELED               # weighting for additional term
