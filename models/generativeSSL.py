@@ -13,8 +13,8 @@ import pdb
 
 class generativeSSL:
     """ Class defining our generative model """
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALHPA=0.1, NONLINEARITY=tf.nn.relu
-		 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_STEPS=10000, Z_SAMPLES=1):
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALPHA=0.1, NONLINEARITY=tf.nn.relu,
+		 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1):
     	## Step 1: define the placeholders for input and output
     	self.Z_DIM = Z_DIM                                   # stochastic inputs dimension       
     	self.NUM_HIDDEN = NUM_HIDDEN                         # number of hidden layers per network
@@ -22,10 +22,11 @@ class generativeSSL:
     	self.lr = LEARNING_RATE 			     # learning rate
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
-    	self.alpha = ALHPA 				     # weighting for additional term
+    	self.alpha = ALPHA 				     # weighting for additional term
     	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
-    	self.NUM_STEPS = NUM_STEPS                           # training steps
+    	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
     	self.LOGDIR = self._allocate_directory()             # logging directory
+    	self.verbose = verbose				     # control output: 1 for ELBO, else accuracy
     
 
     def fit(self, Data):
@@ -56,35 +57,29 @@ class generativeSSL:
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
             writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
-            for index in xrange(self.NUM_STEPS):
+            while epoch < self.NUM_EPOCHS:
                 batch = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
             	_, loss_batch, l_lb, l_ub, l_eb = sess.run([self.optimizer, self.loss, L_l, L_u, L_e], 
             			     	     		    feed_dict={self.x_labeled: batch[0], 
 		           		    	 		       self.labels: batch[1],
 		  	            		     		       self.x_unlabeled: batch[2]})
-                total_loss += loss_batch
-		l_l += l_lb
-		l_u += l_ub
-		l_e += l_eb
-                #if (index ) % SKIP_STEP == 0:
-        	    #print('Average loss at step {}: Total:{:5.1f}, labeled:{:5.1f}, unlabeled:{:5.1f}, Additional:{:5.1f}'.format(index, 
-		#											 		  total_loss/SKIP_STEP,
-		#													  l_l/SKIP_STEP,
-		#													  l_u/SKIP_STEP,
-		#													  l_e/SKIP_STEP))"""
-        	    #total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
-		if Data._epochs_labeled > epoch:
+                total_loss, l_l, l_u, l_e = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb
+                if Data._epochs_labeled > epoch:
 		    epoch += 1
-		    acc_train, acc_test,  = sess.run([train_acc, test_acc],
-						     feed_dict = {self.x_train:Data.data['x_train'],
-						     	 	  self.y_train:Data.data['y_train'],
-								  self.x_test:Data.data['x_test'],
-								  self.y_test:Data.data['y_test']})
-		    print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
+		    if self.verbose==1:
+		    	self._hook_loss(epoch, SKIP_STEP, total_loss, l_l, l_u, l_e)
+        	        total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
+        	    else:
+		        acc_train, acc_test,  = sess.run([train_acc, test_acc],
+						         feed_dict = {self.x_train:Data.data['x_train'],
+						     	              self.y_train:Data.data['y_train'],
+								      self.x_test:Data.data['x_test'],
+								      self.y_test:Data.data['y_test']})
+		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
 	    writer.close()
 
 
-    def predict(self, x, n_iters=1):
+    def predict(self, x, n_iters=10):
 	y_ = self._forward_pass_Cat(x, self.Qx_y)
 	yq = y_
 	for i in range(n_iters):
@@ -104,7 +99,7 @@ class generativeSSL:
 
     def _forward_pass_Cat(self, x, weights):
 	""" Forward pass through the network with weights as a dictionary """
-	return tf.nn.softmax(self._forward_pass_Cat_logits)
+	return tf.nn.softmax(self._forward_pass_Cat_logits(x, weights))
 
 
     def _forward_pass_Cat_logits(self, x, weights):
@@ -241,8 +236,14 @@ class generativeSSL:
 	y[:,k] = 1
 	return tf.constant(y, dtype=tf.float32)
 
+
+    def _hook_loss(self, epoch, SKIP_STEP, total_loss, l_l, l_u, l_e):
+    	print('Epoch {}: Total:{:5.1f}, Labeled:{:5.1f}, unlabeled:{:5.1f}, Additional:{:5.1f}'.format(epoch, 
+											 	      total_loss/SKIP_STEP,
+												      l_l/SKIP_STEP,
+												      l_u/SKIP_STEP,
+												      l_e/SKIP_STEP))
+
+      
     def _allocate_directory(self):
 	return 'graphs/default/'
-
-
-
