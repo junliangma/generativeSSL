@@ -181,7 +181,6 @@ class generativeSSL:
         self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
 
 
-
     def _init_Gauss_net(self, n_in, n_hidden, n_out):
 	""" Initialize the weights of a 2-layer network parameterizeing a Gaussian """
 	W1 = tf.Variable(self._xavier_initializer(n_in, n_hidden))

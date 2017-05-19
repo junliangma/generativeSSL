@@ -22,13 +22,14 @@ class SSL_DATA:
 	self.NAME = dataset
 	
         if x_test is None:
+	    self.N = x.shape[0]
 	    self.TRAIN_SIZE = int(np.round(train_proportion * self.N))
 	    self.TEST_SIZE = int(self.N-self.TRAIN_SIZE)
 	else:
 	    self.TRAIN_SIZE = x.shape[0]
 	    self.TEST_SIZE = x_test.shape[0]
+            self.N = self.TRAIN_SIZE + self.TEST_SIZE
 
-        self.N = self.TRAIN_SIZE + self.TEST_SIZE
 	self.NUM_LABELED = int(np.round(labeled_proportion * self.TRAIN_SIZE))
 	self.NUM_UNLABELED = int(self.TRAIN_SIZE - self.NUM_LABELED)
 
