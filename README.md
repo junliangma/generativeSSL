@@ -6,6 +6,8 @@ Next on the TO-DO list:
 1. Implement Kingma's model
 2. Release constraint on network architecture (scale up networks)
 3. Make sure everything works for digits dataset as well
+4. Add small values to bias initializations to encourage unit activation.
+
 
 Note that currently:
 1. VAE only supports Gaussian distributions on the inputs
