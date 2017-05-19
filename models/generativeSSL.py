@@ -9,10 +9,10 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 import pdb
 
-### Initial class build (moons data in mind) ###
+""" Generative models for labels with stochastic inputs: P(Z)P(X|Z)P(Y|X,Z) """
 
 class generativeSSL:
-    """ Class defining our generative model """
+   
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALPHA=0.1, NONLINEARITY=tf.nn.relu,
 		 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1):
     	## Step 1: define the placeholders for input and output
@@ -32,28 +32,25 @@ class generativeSSL:
     def fit(self, Data):
     	self._process_data(Data)
     	
-    	# Step 1: define the placeholders for input and output
-    	self._create_placeholders()
-    
-       	## Step 2: define weights - setup all networks
+	self._create_placeholders() 
         self._initialize_networks()
         
-        ## Step 3: define the loss function
+        ## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_sum(self._labeled_loss(self.x_labeled, self.labels))
         L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
         L_e = self._qxy_loss(self.x_labeled, self.labels)
         self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e], name='loss')
         
-        ## Step 4: define optimizer
+        ## define optimizer
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
 	
-	## Step 5: compute accuracies
+	## compute accuracies
 	train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
 	test_acc, test_acc_q = self.compute_acc(self.x_test, self.y_test)
 	
-        ## Step 6: initialize session and train
-        SKIP_STEP, epoch = 50, 0
+        ## initialize session and train
+        SKIP_STEP, epoch, step = 50, 0, 0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
@@ -64,12 +61,13 @@ class generativeSSL:
             			     	     		    feed_dict={self.x_labeled: batch[0], 
 		           		    	 		       self.labels: batch[1],
 		  	            		     		       self.x_unlabeled: batch[2]})
-                total_loss, l_l, l_u, l_e = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb
+                total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
+
                 if Data._epochs_labeled > epoch:
 		    epoch += 1
 		    if self.verbose == 0:
-		    	self._hook_loss(epoch, SKIP_STEP, total_loss, l_l, l_u, l_e)
-        	        total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
+		    	self._hook_loss(epoch, step, total_loss, l_l, l_u, l_e)
+        	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
         	    
 		    elif self.verbose == 1:
 		        acc_train, acc_test,  = sess.run([train_acc, test_acc],
@@ -80,7 +78,7 @@ class generativeSSL:
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
         	    
 		    elif self.verbose == 2:
-		        acc_train, acc_test,  = sess.run([train_acci_q, test_acc_q],
+		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
 						         feed_dict = {self.x_train:Data.data['x_train'],
 						     	              self.y_train:Data.data['y_train'],
 								      self.x_test:Data.data['x_test'],
@@ -107,7 +105,7 @@ class generativeSSL:
 	""" Forward pass through the network with weights as a dictionary """
 	h = self.NONLINEARITY(tf.add(tf.matmul(x, weights['W_in']), weights['bias_in']))
 	mean = tf.add(tf.matmul(h, weights['W_out_mean']), weights['bias_out_mean'])
-	log_var = tf.nn.softplus(tf.add(tf.matmul(h, weights['W_out_var']), weights['bias_out_var']))
+	log_var = tf.add(tf.matmul(h, weights['W_out_var']), weights['bias_out_var'])
 	return (mean, log_var)
 
 
