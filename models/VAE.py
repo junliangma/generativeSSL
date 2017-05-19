@@ -13,7 +13,7 @@ import pdb
 
 class VAE:
     def __init__(self, Z_DIM=2, ARCHITECTURE=[4,4], LEARNING_RATE=0.005, NONLINEARITY=tf.nn.relu,
-    		 BATCH_SIZE=16,NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1):
+    		 BATCH_SIZE=16,NUM_EPOCHS=75, Z_SAMPLES=1):
 
         self.Z_DIM = Z_DIM                                   # stochastic layer dimension       
     	self.ARCHITECTURE = ARCHITECTURE                     # number of hidden layers per network
@@ -23,32 +23,26 @@ class VAE:
     	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
     	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
     	self.LOGDIR = self._allocate_directory()             # logging directory
-    	self.verbose = verbose				     # control output: 1 for ELBO, else accuracy
 
     def fit(self, Data):
     	self._process_data(Data)
 
-    	# Step 1: define placeholders for input output
+    	# define placeholders for input output
     	self._create_placeholders()
-
-    	# Step 2: define weights and initialize networks
+    	# define weights and initialize networks
     	self._initialize_networks()
-
-    	# Step 3: define the loss function
-    	z_mean, z_log_var, z = self._sample_Z(self.x_batch)
-    	KLz = self._gauss_kl(z_mean, tf.exp(z_log_var))
-    	logpx = self._log_x_z(self.x_batch, z)
-    	self.loss = tf.subtract(logpx , KLz, name='loss')
-
-    	# Step 4: define optimizer
+    	# define the loss function
+    	self.loss = -self._compute_ELBO(self.x_batch)
+	test_elbo = self._compute_ELBO(self.x_test)
+	train_elbo = self._compute_ELBO(self.x_train)
+    	# define optimizer
     	self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
-
-    	# Step 5: train and run
+    	# run and train
     	epoch, step = 0, 0
     	with tf.Session() as sess:
     	    sess.run(tf.global_variables_initializer())
     	    total_loss = 0
-    	    writer = tf.summart.FileWriter(self.LOGDIR, sess)
+    	    writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
     	    while epoch < self.NUM_EPOCHS:
     	    	batch = Data.next_batch_regular(self.BATCH_SIZE)
     	    	_, loss_batch = sess.run([self.optimizer, self.loss], 
@@ -56,9 +50,11 @@ class VAE:
     	    	total_loss += loss_batch
     	    	step = step + 1 
     	    	if Data._epochs_regular > epoch:
-    	    	    epoch +=1
-    	    	    print('Epoch: {}, Loss: {:5.3f}'.format(step, total_loss / step))
-    	    	    total_loss, step = 0.0, 0
+		    trainELBO, testELBO = sess.run([train_elbo, test_elbo],
+						   feed_dict={self.x_train:Data.data['x_train'],
+							      self.x_test:Data.data['x_test']})
+    	    	    print('Epoch: {}, Train ELBO: {:5.3f}, Test ELBO: {:5.3f}'.format(epoch, trainELBO, testELBO))
+    	    	    total_loss, step, epoch = 0.0, 0, epoch + 1
     	    writer.close()
 
     
@@ -70,11 +66,18 @@ class VAE:
     	mean, log_var = self._forward_pass_Gauss(z, self.Pz_x)
     	return mean
 
-    def _sample_Z(self, x):
+    def _sample_Z(self, x, n_samples=1):
     	""" Sample from Z with the reparamterization trick """
 	mean, log_var = self._forward_pass_Gauss(x, self.Qx_z)
 	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
 	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.exp(log_var)), eps))
+
+    def _compute_ELBO(self, x):
+    	z_mean, z_log_var, z = self._sample_Z(x)
+    	KLz = self._gauss_kl(z_mean, tf.exp(z_log_var))
+    	logpx = self._log_x_z(x, z),
+	total_elbo = tf.subtract(logpx, KLz)
+        return tf.reduce_mean(total_elbo)
 
     
     def _forward_pass_Gauss(self, x, weights):
@@ -82,11 +85,11 @@ class VAE:
 	for i, neurons in enumerate(self.ARCHITECTURE):
 	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
 	    if i==0:
-		h = self.NONLINEARITY(tf.add(tf.matmul(x, weights[weight_name]), [bias_name]))
+		h = self.NONLINEARITY(tf.add(tf.matmul(x, weights[weight_name]), weights[bias_name]))
 	    else:
-	        h = self.NONLINEARITY(tf.add(tf.matmul(h, self.weights[weight_name]), self.weights[bias_name]))
-	mean = tf.add(tf.matmul(h, self.weights['Wmean']), self.weights['bmean'])
-	log_var = tf.add(tf.matmul(h, self.weights['Wvar']), self.weights['bvar'])
+	        h = self.NONLINEARITY(tf.add(tf.matmul(h, weights[weight_name]), weights[bias_name]))
+	mean = tf.add(tf.matmul(h, weights['Wmean']), weights['bmean'])
+	log_var = tf.add(tf.matmul(h, weights['Wvar']), weights['bvar'])
 	return mean, log_var
 
 
@@ -152,4 +155,5 @@ class VAE:
     	self.x_batch = tf.placeholder(tf.float32, shape=[self.BATCH_SIZE, self.X_DIM], name='x_batch')
     	self.y_batch = tf.placeholder(tf.float32, shape=[self.BATCH_SIZE, self.NUM_CLASSES], name='y_batch')
 
-    
+    def _allocate_directory(self):
+	return 'VAE_graphs/default/'    

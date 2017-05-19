@@ -15,21 +15,28 @@ y - np array: N rows, k columns (one-hot encoding)
 
 class SSL_DATA:
     """ Class for appropriate data structures """
-    def __init__(self, x, y, train_proportion=0.7, labeled_proportion=0.3, dataset='moons'):
+    def __init__(self, x, y, x_test=None, y_test=None, train_proportion=0.7, labeled_proportion=0.3, dataset='moons'):
 	
-        self.N = int(x.shape[0] )
 	self.INPUT_DIM = x.shape[1]
 	self.NUM_CLASSES = y.shape[1]
 	self.NAME = dataset
-	self.TRAIN_SIZE = int(np.round(train_proportion * self.N))
-	self.TEST_SIZE = int(self.N-self.TRAIN_SIZE)
+	
+        if x_test is None:
+	    self.TRAIN_SIZE = int(np.round(train_proportion * self.N))
+	    self.TEST_SIZE = int(self.N-self.TRAIN_SIZE)
+	else:
+	    self.TRAIN_SIZE = x.shape[0]
+	    self.TEST_SIZE = x_test.shape[0]
+
+        self.N = self.TRAIN_SIZE + self.TEST_SIZE
 	self.NUM_LABELED = int(np.round(labeled_proportion * self.TRAIN_SIZE))
 	self.NUM_UNLABELED = int(self.TRAIN_SIZE - self.NUM_LABELED)
 
-
-
 	# create necessary data splits
-	xtrain, ytrain, xtest, ytest = self._split_data(x,y)
+    	if x_test is None:
+	    xtrain, ytrain, xtest, ytest = self._split_data(x,y)
+	else:
+	    xtrain, ytrain, xtest, ytest = x, y, x_test, y_test
 	x_labeled, y_labeled, x_unlabeled, y_unlabeled = self._create_semisupervised(xtrain, ytrain)
 
 	# create appropriate data dictionaries
