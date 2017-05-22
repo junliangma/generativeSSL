@@ -9,9 +9,9 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 import pdb
 
-""" Generative models for labels with stochastic inputs: P(Z)P(X|Z)P(Y|X,Z) """
+""" Implementation of Kingma et al (2014), M2:  P(Z)P(Y)P(X|Y,Z) """
 
-class generativeSSL:
+class M2:
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALPHA=0.1, NONLINEARITY=tf.nn.relu,
 		 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1):
@@ -26,7 +26,7 @@ class generativeSSL:
     	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
     	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
     	self.LOGDIR = self._allocate_directory()             # logging directory
-    	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
+    	self.verbose = verbose				     # control output: 1 for ELBO, else accuracy
     
 
     def fit(self, Data):
@@ -46,8 +46,9 @@ class generativeSSL:
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
 	
 	## compute accuracies
-	train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
-	test_acc, test_acc_q = self.compute_acc(self.x_test, self.y_test)
+	train_acc = self.compute_acc(self.x_train, self.y_train)
+	test_acc = self.compute_acc(self.x_test, self.y_test)
+	
 	
         ## initialize session and train
         SKIP_STEP, epoch, step = 50, 0, 0
@@ -62,7 +63,6 @@ class generativeSSL:
 		           		    	 		       self.labels: batch[1],
 		  	            		     		       self.x_unlabeled: batch[2]})
                 total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
-
                 if Data._epochs_labeled > epoch:
 		    epoch += 1
 		    if self.verbose == 0:
@@ -76,30 +76,12 @@ class generativeSSL:
 								      self.x_test:Data.data['x_test'],
 								      self.y_test:Data.data['y_test']})
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
-        	    
-		    elif self.verbose == 2:
-		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
-						         feed_dict = {self.x_train:Data.data['x_train'],
-						     	              self.y_train:Data.data['y_train'],
-								      self.x_test:Data.data['x_test'],
-								      self.y_test:Data.data['y_test']})
-		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
+            	    
 	    writer.close()
 
 
-    def predict(self, x, n_iters=10):
-	y_ = self._forward_pass_Cat(x, self.Qx_y)
-	yq = y_
-	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
-	y_samps = tf.expand_dims(y_, axis=2)
-	for i in range(n_iters):
-	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
-	    h = tf.concat([x, z], axis=1)
-	    y_ = self._forward_pass_Cat(h, self.Pzx_y)
-	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
-	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
-	return tf.reduce_mean(y_samps, axis=2), yq
-
+    def predict(self, x):
+	return self._forward_pass_Cat(x, self.Qx_y)
 
     def _forward_pass_Gauss(self, x, weights):
 	""" Forward pass through the network with weights as a dictionary """
@@ -131,12 +113,11 @@ class generativeSSL:
 
     def _labeled_loss(self, x, y):
 	""" Compute necessary terms for labeled loss (per data point) """
-	q_mean, q_log_var, z = self._sample_Z(x, y, self.Z_SAMPLES)
-	logpx = self._compute_logpx(x, z)
-	logpy = self._compute_logpy(y, x, z)
-	klz = self._gauss_kl(q_mean, tf.exp(q_log_var))
-	return tf.add_n([logpx , logpy , -klz])
-
+	z_mean, z_log_var, z  = self._sample_Z(x, y, self.Z_SAMPLES)
+	logpx = self._compute_logpx(x,z)
+	logpy = self._compute_logpy(y)               
+	KLz = self._gauss_kl(z_mean, tf.exp(z_log_var))
+	return tf.add_n([logpx, logpy, -KLz], name='labeled_loss')
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
@@ -161,11 +142,10 @@ class generativeSSL:
 	return mvn.log_prob(x)
 
 
-    def _compute_logpy(self, y, x, z):
+    def _compute_logpy(self, y):
 	""" compute the likelihood of every element in y under p(y|x,z) """
-	h = tf.concat([x,z], axis=1)
-	y_ = self._forward_pass_Cat_logits(h, self.Pzx_y)
-	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
+	return tf.reduce_mean(tf.multiply(y, tf.log(self.Py)), axis=1)
+
 
     def _gauss_kl(self, mean, sigma):
 	""" compute the KL-divergence of a Gaussian against N(0,1) """
@@ -179,6 +159,7 @@ class generativeSSL:
     	""" Compute scaling weights for the loss function """
         self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
         self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+
 
 
     def _init_Gauss_net(self, n_in, n_hidden, n_out):
@@ -204,10 +185,8 @@ class generativeSSL:
 
 
     def compute_acc(self, x, y):
-	y_, yq = self.predict(x)
-	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	acc_q =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(yq,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	return acc, acc_q
+	y_ = self.predict(x)
+	return  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
 
 
     def _process_data(self, data):
@@ -237,7 +216,7 @@ class generativeSSL:
     def _initialize_networks(self):
     	""" Initialize all model networks """
     	self.Pz_x = self._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
-    	self.Pzx_y = self._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+    	self.Py = tf.constant((1./self.NUM_CLASSES)*np.ones(shape=(self.NUM_CLASSES,)), dtype=tf.float32)
     	self.Qxy_z = self._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
     	self.Qx_y = self._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
 
