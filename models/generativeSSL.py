@@ -2,12 +2,14 @@ from __future__ import absolute_import
 from __future__ import division 
 from __future__ import print_function
 
+import sys, os, pdb
+
 import numpy as np
+import utils.dgm as dgm 
 
 import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 
-import pdb
 
 """ Generative models for labels with stochastic inputs: P(Z)P(X|Z)P(Y|X,Z) """
 
@@ -88,59 +90,24 @@ class generativeSSL:
 
 
     def predict(self, x, n_iters=10):
-	y_ = self._forward_pass_Cat(x, self.Qx_y)
+	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	yq = y_
 	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	y_samps = tf.expand_dims(y_, axis=2)
 	for i in range(n_iters):
 	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
 	    h = tf.concat([x, z], axis=1)
-	    y_ = self._forward_pass_Cat(h, self.Pzx_y)
+	    y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
 	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	return tf.reduce_mean(y_samps, axis=2), yq
-
-
-    def _forward_pass_Gauss(self, x, weights):
-	""" Forward pass through the network with given weights - Gaussian output """
-	for i, neurons in enumerate(self.NUM_HIDDEN):
-	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
-	    if i==0:
-		h = self.NONLINEARITY(tf.add(tf.matmul(x, weights[weight_name]), weights[bias_name]))
-	    else:
-	        h = self.NONLINEARITY(tf.add(tf.matmul(h, weights[weight_name]), weights[bias_name]))
-	mean = tf.add(tf.matmul(h, weights['Wmean']), weights['bmean'])
-	log_var = tf.add(tf.matmul(h, weights['Wvar']), weights['bvar'])
-	return mean, log_var
-
-
-    def _forward_pass_Cat(self, x, weights):
-	""" Forward pass through network with given weights - Categorical output """
-	return tf.nn.softmax(self._forward_pass_Cat_logits(x, weights))
-
-
-    def _forward_pass_Bernoulli(self, x, weights):
-	""" Forward pass through the network with given weights - Bernoulli output """
-	return tf.nn.sigmoid(self._forward_pass_Cat_logits(x, weights))
-
-
-    def _forward_pass_Cat_logits(self, x, weights):
-    	""" Forward pass through the network with weights as a dictionary """
-    	for i, neurons in enumerate(self.NUM_HIDDEN):
-	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
-	    if i==0:
-		h = self.NONLINEARITY(tf.add(tf.matmul(x, weights[weight_name]), weights[bias_name]))
-	    else:
-	        h = self.NONLINEARITY(tf.add(tf.matmul(h, weights[weight_name]), weights[bias_name]))
-	logits = tf.add(tf.matmul(h, weights['Wout']), weights['bout'])
-	return logits
 
 
 
     def _sample_Z(self, x, y, n_samples):
 	""" Sample from Z with the reparamterization trick """
 	h = tf.concat([x, y], axis=1)
-	mean, log_var = self._forward_pass_Gauss(h, self.Qxy_z)
+	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
 	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.exp(log_var)), eps))
 
@@ -150,13 +117,13 @@ class generativeSSL:
 	q_mean, q_log_var, z = self._sample_Z(x, y, self.Z_SAMPLES)
 	logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z)
-	klz = self._gauss_kl(q_mean, tf.exp(q_log_var))
+	klz = dgm._gauss_kl(q_mean, tf.exp(q_log_var))
 	return tf.add_n([logpx , logpy , -klz])
 
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
-	weights = self._forward_pass_Cat(x, self.Qx_y)
+	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
@@ -166,72 +133,32 @@ class generativeSSL:
 
 
     def _qxy_loss(self, x, y):
-	y_ = self._forward_pass_Cat_logits(x, self.Qx_y)
+	y_ = dgm._forward_pass_Cat_logits(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	return -tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_))
 
 
     def _compute_logpx(self, x, z):
 	""" compute the likelihood of every element in x under p(x|z) """
 	if self.TYPE_PX == 'Gaussian':
-	    mean, log_var = self._forward_pass_Gauss(z,self.Pz_x)
+	    mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
 	    mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_var))
 	    return mvn.log_prob(x)
 	elif self.TYPE_PX == 'Bernoulli':
-	    pi = self._forward_pass_Bernoulli(z, self.Pz_x)
+	    pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
 	    return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi),  (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)
 
 
     def _compute_logpy(self, y, x, z):
 	""" compute the likelihood of every element in y under p(y|x,z) """
 	h = tf.concat([x,z], axis=1)
-	y_ = self._forward_pass_Cat_logits(h, self.Pzx_y)
+	y_ = dgm._forward_pass_Cat_logits(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
-
-    def _gauss_kl(self, mean, sigma):
-	""" compute the KL-divergence of a Gaussian against N(0,1) """
-	mean_0, sigma_0 = tf.zeros_like(mean), tf.ones_like(sigma)
-	mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)
-	prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)
-	return tf.contrib.distributions.kl(mvnQ, prior)
 
     
     def _compute_loss_weights(self):
     	""" Compute scaling weights for the loss function """
         self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
         self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
-
-
-    def _init_Gauss_net(self, n_in, architecture, n_out):
-	""" Initialize the weights of a 2-layer network parameterizeing a Gaussian """
-	weights = {}
-    	for i, neurons in enumerate(architecture):
-    	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
-    	    if i == 0:
-    	    	weights[weight_name] = tf.Variable(self._xavier_initializer(n_in, architecture[i]))
-    	    else:
-    	    	weights[weight_name] = tf.Variable(self._xavier_initializer(architecture[i-1], architecture[i]))
-    	    weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1)
-    	weights['Wmean'] = tf.Variable(self._xavier_initializer(architecture[-1], n_out))
-    	weights['bmean'] = tf.Variable(tf.zeros(n_out) + 1e-1)
-    	weights['Wvar'] = tf.Variable(self._xavier_initializer(architecture[-1], n_out))
-    	weights['bvar'] = tf.Variable(tf.zeros(n_out) + 1e-1)
-    	return weights
-
-
-    def _init_Cat_net(self, n_in, architecture, n_out):
-	""" Initialize the weights of a 2-layer network parameterizeing a Categorical """
-	weights = {}
-    	for i, neurons in enumerate(architecture):
-    	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
-    	    if i == 0:
-    	    	weights[weight_name] = tf.Variable(self._xavier_initializer(n_in, architecture[i]))
-    	    else:
-    	    	weights[weight_name] = tf.Variable(self._xavier_initializer(architecture[i-1], architecture[i]))
-    	    weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1)
-    	weights['Wout'] = tf.Variable(self._xavier_initializer(architecture[-1], n_out))
-    	weights['bout'] = tf.Variable(tf.zeros(n_out) + 1e-1)
-    	return weights
-    
 
     
     def compute_acc(self, x, y):
@@ -268,22 +195,14 @@ class generativeSSL:
     def _initialize_networks(self):
     	""" Initialize all model networks """
 	if self.TYPE_PX == 'Gaussian':
-      	    self.Pz_x = self._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
+      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
 	elif self.TYPE_PX == 'Bernoulli':
-	    self.Pz_x = self._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
-    	self.Pzx_y = self._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
-    	self.Qxy_z = self._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
-    	self.Qx_y = self._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
+    	self.Pzx_y = dgm._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
+    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
 
     
-    def _xavier_initializer(self, fan_in, fan_out, constant=1): 
-    	""" Xavier initialization of network weights"""
-	low = -constant*np.sqrt(6.0/(fan_in + fan_out)) 
-    	high = constant*np.sqrt(6.0/(fan_in + fan_out))
-    	return tf.random_uniform((fan_in, fan_out), 
-        	                  minval=low, maxval=high, 
-            	                  dtype=tf.float32)
-
 
     def _generate_class(self, k, num):
 	""" create one-hot encoding of class k with length num """
