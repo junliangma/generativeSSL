@@ -15,8 +15,8 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 class generativeSSL:
    
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, NONLINEARITY=tf.nn.relu,
-		 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1, TYPE_PX='Gaussian'):
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, 
+                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1):
     	## Step 1: define the placeholders for input and output
     	self.Z_DIM = Z_DIM                                   # stochastic inputs dimension       
     	self.NUM_HIDDEN = NUM_HIDDEN                         # (list) number of hidden layers/neurons per network
