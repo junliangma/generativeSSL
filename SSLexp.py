@@ -25,34 +25,43 @@ def load_mnist(path='data/mnist.pkl.gz'):
 
 ## argv[1] - dataset to use (moons, digits, mnist)
 dataset = sys.argv[1]
-labeled_batchsize, unlabeled_batchsize = 64,256
-labeled_proportion = 0.1
 
 if dataset == 'moons':
     target = './data/moons.pkl'
-    z_dim = 4
+    labeled_proportion = 0.03
+    labeled_batchsize, unlabeled_batchsize = 4,32
+    
+    z_dim = 5
     learning_rate = 1e-2
     architecture = [10,10]
-    n_epochs = 20
+    n_epochs = 25
     type_px = 'Gaussian'
+    binarize = False
 
 elif dataset == 'digits': 
     target = './data/digits.pkl'
+    labeled_proportion = 0.2
+    labeled_batchsize, unlabeled_batchsize = 6,128
+
     z_dim = 50
     learning_rate = 1e-3
     architecture = [200,200]
     n_epochs = 500
     type_px = 'Bernoulli'
+    binarize = False
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
+    labeled_proportion = 0.015
+    labeled_batchsize, unlabeled_batchsize = 64,128
     x_train, y_train, x_test, y_test = load_mnist(target)
-    
-    z_dim = 50
-    learning_rate = 3e-4
+
+    z_dim = 100
+    learning_rate = 5e-5
     architecture = [600, 600]
     n_epochs = 500
     type_px = 'Bernoulli'
+    binarize = True
     
 
 if dataset in ['moons', 'digits']:
@@ -63,6 +72,6 @@ if dataset in ['moons', 'digits']:
 elif dataset == 'mnist':
     data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset)
 
-model = generativeSSL(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
+model = generativeSSL(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px)
 model.fit(data)

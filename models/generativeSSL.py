@@ -28,6 +28,7 @@ class generativeSSL:
     	self.alpha = ALPHA 				     # weighting for additional term
     	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
     	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
+	self.BINARIZE = BINARIZE                             # sample inputs from Bernoulli distribution if true 
     	self.LOGDIR = self._allocate_directory()             # logging directory
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
     
@@ -59,37 +60,42 @@ class generativeSSL:
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
             writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
             while epoch < self.NUM_EPOCHS:
-                batch = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
+                x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
+		if self.BINARIZE == True:
+	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
             	_, loss_batch, l_lb, l_ub, l_eb = sess.run([self.optimizer, self.loss, L_l, L_u, L_e], 
-            			     	     		    feed_dict={self.x_labeled: batch[0], 
-		           		    	 		       self.labels: batch[1],
-		  	            		     		       self.x_unlabeled: batch[2]})
+            			     	     		    feed_dict={self.x_labeled: x_labeled, 
+		           		    	 		       self.labels: labels,
+		  	            		     		       self.x_unlabeled: x_unlabeled})
                 total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
-                if Data._epochs_labeled > epoch:
+                if Data._epochs_unlabeled > epoch:
 		    epoch += 1
 		    if self.verbose == 0:
 		    	self._hook_loss(epoch, step, total_loss, l_l, l_u, l_e)
         	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
         	    
 		    elif self.verbose == 1:
+			x_train = Data.data['x_train']
+			x_test = Data.data['x_test']
+			    
 		        acc_train, acc_test,  = sess.run([train_acc, test_acc],
-						         feed_dict = {self.x_train:Data.data['x_train'],
+						         feed_dict = {self.x_train:x_train,
 						     	              self.y_train:Data.data['y_train'],
-								      self.x_test:Data.data['x_test'],
+								      self.x_test:x_test,
 								      self.y_test:Data.data['y_test']})
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
         	    
 		    elif self.verbose == 2:
 		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
-						         feed_dict = {self.x_train:Data.data['x_train'],
+						         feed_dict = {self.x_train:x_train,
 						     	              self.y_train:Data.data['y_train'],
-								      self.x_test:Data.data['x_test'],
+								      self.x_test:x_test,
 								      self.y_test:Data.data['y_test']})
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
 	    writer.close()
 
 
-    def predict(self, x, n_iters=10):
+    def predict(self, x, n_iters=100):
 	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	yq = y_
 	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
@@ -166,6 +172,9 @@ class generativeSSL:
 	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
 	acc_q =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(yq,axis=1), tf.argmax(y, axis=1)), tf.float32))
 	return acc, acc_q
+
+    def _binarize(self, x):
+	return np.random.binomial(1, x)
 
 
     def _process_data(self, data):

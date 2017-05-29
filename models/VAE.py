@@ -41,10 +41,9 @@ class VAE:
     	# run and train
     	epoch, step = 0, 0
     	with tf.Session() as sess:
-    	    sess.run(tf.global_variables_initializer()) ## tf 1.1.0
-	    #sess.run(tf.initialize_all_variables())      ## tf 0.11 
+    	    sess.run(tf.global_variables_initializer()) 
     	    total_loss = 0
-    	    #writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+    	    writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
     	    while epoch < self.NUM_EPOCHS:
     	    	batch = Data.next_batch_regular(self.BATCH_SIZE)
     	    	_, loss_batch = sess.run([self.optimizer, self.loss], 
@@ -57,7 +56,7 @@ class VAE:
 							      self.x_test:Data.data['x_test']})
     	    	    print('Epoch: {}, Train ELBO: {:5.3f}, Test ELBO: {:5.3f}'.format(epoch, trainELBO, testELBO))
     	    	    total_loss, step, epoch = 0.0, 0, epoch + 1
-    	    #writer.close()
+   	    writer.close()
 
     
     def _encode(self, x):
@@ -72,8 +71,7 @@ class VAE:
     	""" Sample from Z with the reparamterization trick """
 	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.exp(log_var)), eps))  ## tf 1.1.0
-	#return mean, log_var, tf.add(mean, tf.mul(tf.sqrt(tf.exp(log_var)), eps))      ## tf 0.11
+	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.exp(log_var)), eps)) 
 
     def _compute_ELBO(self, x):
     	z_mean, z_log_var, z = self._sample_Z(x)
@@ -86,8 +84,7 @@ class VAE:
     def _log_x_z(self, x, z):
     	""" compute the likelihood of every element in x under p(x|z) """
 	mean, log_var = dgm._forward_pass_Gauss(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_var)) ## tf 1.1.0
-	#mvn = tf.contrib.distributions.MultivariateNormalDiag(mean, tf.sqrt(tf.exp(log_var))) ## tf 0.11.
+	mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_var)) 
 	return mvn.log_prob(x)
 
 

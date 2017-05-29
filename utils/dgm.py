@@ -49,10 +49,8 @@ def _forward_pass_Cat_logits(x, weights, n_h, nonlinearity):
 def _gauss_kl(mean, sigma):
     """ compute the KL-divergence of a Gaussian against N(0,1) """
     mean_0, sigma_0 = tf.zeros_like(mean), tf.ones_like(sigma)
-    mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)       ## tf 1.1.0
-    prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)  ## tf 1.1.0
-    #mvnQ = tf.contrib.distributions.MultivariateNormalDiag(mean, tf.sqrt(sigma))              ## tf 0.11
-    #prior = tf.contrib.distributions.MultivariateNormalDiag(mean_0, sigma_0)                  ## tf 0.11
+    mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)      
+    prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)  
     return tf.contrib.distributions.kl(mvnQ, prior)
 
 
