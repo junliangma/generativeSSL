@@ -19,8 +19,8 @@ Here we implement Bayesian training for the model (hence Bgssl)
 
 class bgssl:
    
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, 
-                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1):
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, initVar=-5, 
+                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, temperature_epochs=None, BINARIZE=False, verbose=1):
     	## Step 1: define the placeholders for input and output
     	self.Z_DIM = Z_DIM                                   # stochastic inputs dimension       
     	self.NUM_HIDDEN = NUM_HIDDEN                         # (list) number of hidden layers/neurons per network
@@ -32,6 +32,8 @@ class bgssl:
     	self.alpha = ALPHA 				     # weighting for additional term
     	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
     	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
+	self.temperature_epochs = temperature_epochs         # number of epochs untill kl_W is fully on
+	self.initVar = initVar                               # initial variance for BNN prior weight distribution
 	self.BINARIZE = BINARIZE                             # sample inputs from Bernoulli distribution if true 
     	self.LOGDIR = self._allocate_directory()             # logging directory
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
@@ -41,6 +43,7 @@ class bgssl:
     	self._process_data(Data)
     	
 	self._create_placeholders() 
+	self._set_schedule()
         self._initialize_networks()
         
         ## define loss function
@@ -64,6 +67,7 @@ class bgssl:
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
             writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
             while epoch < self.NUM_EPOCHS:
+		self.beta = self.schedule[epoch]
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
@@ -71,6 +75,7 @@ class bgssl:
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		       self.labels: labels,
 		  	            		     		       self.x_unlabeled: x_unlabeled})
+		#pdb.set_trace()
                 total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
 		    epoch += 1
@@ -153,24 +158,28 @@ class bgssl:
 
 
 
-    def _labeled_loss(self, x, y):
+    def _labeled_loss_W(self, x, y, w):
 	""" Compute necessary terms for labeled loss (per data point) """
-	q_mean, q_log_var, z = self._sample_Z(x, y, self.Z_SAMPLES)
-	w = self._sample_W()
+	q_mean, q_logvar, z = self._sample_Z(x, y, self.Z_SAMPLES)
 	logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z, w)
-	klz = dgm._gauss_kl(q_mean, tf.exp(q_log_var))
-	klw = self._kl_W() / tf.cast(tf.shape(x)[0], tf.float32)
-	return tf.add_n([logpx , logpy , -klz]) - klw
+	klz = dgm._gauss_kl(q_mean, tf.exp(q_logvar))
+	klw = self.beta * (self._kl_W() / tf.cast(self.N, tf.float32))
+	return logpx + logpy  - klz - klw
+
+    def _labeled_loss(self, x, y):
+	w = self._sample_W()
+	return self._labeled_loss_W(x,y,w)
 
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
 	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	w = self._sample_W()
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
-	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
+	    EL_l += tf.multiply(weights[:,i], self._labeled_loss_W(x,y,w))
 	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(weights)), axis=1)
 	return tf.add(EL_l, ent_qy)
 
@@ -203,19 +212,22 @@ class bgssl:
     	    mean, logvar = self.Pzx_y['W'+str(i)+'_mean'], self.Pzx_y['W'+str(i)+'_logvar']
     	    kl += dgm._gauss_kl(tf.reshape(mean, shape=[-1]), tf.reshape(tf.exp(logvar), shape=[-1]))
     	    mean, logvar = self.Pzx_y['b'+str(i)+'_mean'], self.Pzx_y['b'+str(i)+'_logvar']
-    	    kl += dgm._gauss_kl(tf.reshape(mean, [-1]), tf.reshape(tf.exp(logvar), shape=[-1]))
+    	    kl += dgm._gauss_kl(mean, tf.exp(logvar))
     	mean, logvar = self.Pzx_y['Wout_mean'], self.Pzx_y['Wout_logvar']
     	kl += dgm._gauss_kl(tf.reshape(mean, shape=[-1]), tf.reshape(tf.exp(logvar), shape=[-1]))
     	mean, logvar = self.Pzx_y['bout_mean'], self.Pzx_y['bout_logvar']
-    	kl += dgm._gauss_kl(tf.reshape(mean, [-1]), tf.reshape(tf.exp(logvar), shape=[-1]))
+    	kl += dgm._gauss_kl(mean, tf.exp(logvar))
 	return kl
-    
+   
+    #def _kl_W2(self):
+	
+ 
     def _compute_loss_weights(self):
     	""" Compute scaling weights for the loss function """
         self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
         self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
-
-    
+   
+ 
     def compute_acc(self, x, y):
 	y_, yq = self.predict(x)
 	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
@@ -256,11 +268,19 @@ class bgssl:
       	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
 	elif self.TYPE_PX == 'Bernoulli':
 	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
-    	self.Pzx_y = dgm._init_Cat_bnn(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+    	self.Pzx_y = dgm._init_Cat_bnn(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, self.initVar)
     	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
     	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
 
-    
+
+    def _set_schedule(self):
+	if not self.temperature_epochs:
+	    self.schedule = np.ones((self.NUM_EPOCHS,1))
+	else:
+	    warmup = np.expand_dims(np.arange(0, 1, 1./self.temperature_epochs),1)
+	    plateau = np.ones(shape=(self.NUM_EPOCHS - self.temperature_epochs,1))
+	    self.schedule = np.ravel(np.vstack((warmup, plateau)))
+	self.beta = self.schedule[0]
 
     def _generate_class(self, k, num):
 	""" create one-hot encoding of class k with length num """

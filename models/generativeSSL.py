@@ -229,4 +229,4 @@ class generativeSSL:
 
       
     def _allocate_directory(self):
-	return 'graphs/default/'
+	return 'graphs/gssl-'
