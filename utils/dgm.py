@@ -86,23 +86,23 @@ def _init_Cat_net(n_in, architecture, n_out):
     return weights
 
 
-def _init_Cat_bnn(n_in, architecture, n_out):
+def _init_Cat_bnn(n_in, architecture, n_out, initVar=-5):
     weights = {}
     for i, neurons in enumerate(architecture):
         weight_mean, bias_mean = 'W'+str(i)+'_mean', 'b'+str(i)+'_mean'
         weight_logvar, bias_logvar = 'W'+str(i)+'_logvar', 'b'+str(i)+'_logvar'
         if i == 0:
             weights[weight_mean] = tf.Variable(xavier_initializer(n_in, architecture[i]))
-            weights[weight_logvar] = tf.Variable(tf.fill([n_in, architecture[i]], value=-2.))
+            weights[weight_logvar] = tf.Variable(tf.fill([n_in, architecture[i]], initVar))
         else:
             weights[weight_mean] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]))
-            weights[weight_logvar] = tf.Variable(tf.fill([architecture[i-1], architecture[i]], value=-2.))
+            weights[weight_logvar] = tf.Variable(tf.fill([architecture[i-1], architecture[i]], initVar))
         weights[bias_mean] = tf.Variable(tf.zeros(architecture[i]) + 1e-1)
-        weights[bias_logvar] = tf.Variable(tf.fill([architecture[i]], value=-2.))
+        weights[bias_logvar] = tf.Variable(tf.fill([architecture[i]], initVar))
     weights['Wout_mean'] = tf.Variable(xavier_initializer(architecture[-1], n_out))
-    weights['Wout_logvar'] = tf.Variable(tf.fill([architecture[-1], n_out], value=-2.))
+    weights['Wout_logvar'] = tf.Variable(tf.fill([architecture[-1], n_out], initVar))
     weights['bout_mean'] = tf.Variable(tf.zeros(n_out) + 1e-1)
-    weights['bout_logvar'] = tf.Variable(tf.fill([n_out], value = -2.))
+    weights['bout_logvar'] = tf.Variable(tf.fill([n_out], value = initVar))
     return weights
 
 
