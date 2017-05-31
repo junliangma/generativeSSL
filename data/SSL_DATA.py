@@ -29,7 +29,6 @@ class SSL_DATA:
 	    self.TRAIN_SIZE = x.shape[0]
 	    self.TEST_SIZE = x_test.shape[0]
             self.N = self.TRAIN_SIZE + self.TEST_SIZE
-
 	self.NUM_LABELED = int(np.round(labeled_proportion * self.TRAIN_SIZE))
 	self.NUM_UNLABELED = int(self.TRAIN_SIZE - self.NUM_LABELED)
 
