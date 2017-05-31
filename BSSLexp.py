@@ -32,21 +32,25 @@ if dataset == 'moons':
     labeled_batchsize, unlabeled_batchsize = 4,32
     
     z_dim = 5
-    learning_rate = 1e-2
+    learning_rate = 2e-2
     architecture = [10,10]
-    n_epochs = 25
+    n_epochs = 30
+    temperature_epochs = 15
+    initVar = -3.
     type_px = 'Gaussian'
     binarize = False
 
 elif dataset == 'digits': 
     target = './data/digits.pkl'
     labeled_proportion = 0.2
-    labeled_batchsize, unlabeled_batchsize = 6,128
+    labeled_batchsize, unlabeled_batchsize = 6,32
 
     z_dim = 50
     learning_rate = 1e-3
     architecture = [200,200]
     n_epochs = 500
+    temperature_epochs = 25
+    initVar = -7.
     type_px = 'Bernoulli'
     binarize = False
 
@@ -57,9 +61,11 @@ elif dataset == 'mnist':
     x_train, y_train, x_test, y_test = load_mnist(target)
 
     z_dim = 100
-    learning_rate = 5e-5
-    architecture = [600, 600]
+    learning_rate = 1e-4
+    architecture = [400, 400]
     n_epochs = 500
+    temperature_epochs = 75
+    initVar = -7.
     type_px = 'Bernoulli'
     binarize = True
     
@@ -73,5 +79,6 @@ elif dataset == 'mnist':
     data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset)
 
 model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px)
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, temperature_epochs=temperature_epochs, 
+	 	initVar=initVar, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px)
 model.fit(data)

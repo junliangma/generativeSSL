@@ -41,7 +41,7 @@ if dataset == 'moons':
 elif dataset == 'digits': 
     target = './data/digits.pkl'
     labeled_proportion = 0.2
-    labeled_batchsize, unlabeled_batchsize = 6,128
+    labeled_batchsize, unlabeled_batchsize = 6,32
 
     z_dim = 50
     learning_rate = 1e-3
