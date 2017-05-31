@@ -16,7 +16,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 class generativeSSL:
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, 
-                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1):
+                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
     	## Step 1: define the placeholders for input and output
     	self.Z_DIM = Z_DIM                                   # stochastic inputs dimension       
     	self.NUM_HIDDEN = NUM_HIDDEN                         # (list) number of hidden layers/neurons per network
@@ -29,8 +29,8 @@ class generativeSSL:
     	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
     	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
 	self.BINARIZE = BINARIZE                             # sample inputs from Bernoulli distribution if true 
-    	self.LOGDIR = self._allocate_directory()             # logging directory
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
+	self.LOGGING = logging                               # use tensorflow logging
     
 
     def fit(self, Data):
@@ -52,39 +52,57 @@ class generativeSSL:
 	## compute accuracies
 	train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
 	test_acc, test_acc_q = self.compute_acc(self.x_test, self.y_test)
-	
+
+	## create summaries for tracking
+	with tf.name_scope("summaries_elbo"):
+	    tf.summary.scalar("ELBO", self.loss)
+	    tf.summary.scalar("Labeled Loss", L_l)
+	    tf.summary.scalar("Unlabeled Loss", L_u)
+	    tf.summary.scalar("Additional Penalty", L_e)	    	
+	    self.summary_op_elbo = tf.summary.merge_all()
+
+
+	with tf.name_scope("summaries_accuracy"):
+	    train_summary = tf.summary.scalar("Train Accuracy", train_acc)
+	    test_summary = tf.summary.scalar("Test Accuracy", test_acc)
+	    self.summary_op_acc = tf.summary.merge([train_summary, test_summary])
+
+
         ## initialize session and train
         SKIP_STEP, epoch, step = 50, 0, 0
-        with tf.Session() as sess:
+	with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
-            writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+	    saver = tf.train.Saver()
+	    if self.LOGGING:
+                writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
             while epoch < self.NUM_EPOCHS:
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
-            	_, loss_batch, l_lb, l_ub, l_eb = sess.run([self.optimizer, self.loss, L_l, L_u, L_e], 
+            	_, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo], 
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		       self.labels: labels,
 		  	            		     		       self.x_unlabeled: x_unlabeled})
-                total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
+            	if self.LOGGING:
+             	    writer.add_summary(summary_elbo, global_step=step)
+                
+		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
-		    epoch += 1
+        	    saver.save(sess, self.ckpt_dir, global_step=step+1)
 		    if self.verbose == 0:
 		    	self._hook_loss(epoch, step, total_loss, l_l, l_u, l_e)
         	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
-        	    
 		    elif self.verbose == 1:
-			x_train = Data.data['x_train']
-			x_test = Data.data['x_test']
-			    
-		        acc_train, acc_test,  = sess.run([train_acc, test_acc],
-						         feed_dict = {self.x_train:x_train,
-						     	              self.y_train:Data.data['y_train'],
-								      self.x_test:x_test,
-								      self.y_test:Data.data['y_test']})
+			   
+		        acc_train, acc_test, summary_acc = sess.run([train_acc, test_acc, self.summary_op_acc],
+						         feed_dict = {self.x_train:Data.data['x_train'],
+		  	            		     		       self.y_train:Data.data['y_train'],
+		  	            		     		       self.x_test:Data.data['x_test'],
+		  	            		     		       self.y_test:Data.data['y_test']})
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
-        	    
+			if self.LOGGING:
+         	            writer.add_summary(summary_acc, global_step=epoch)
 		    elif self.verbose == 2:
 		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
 						         feed_dict = {self.x_train:x_train,
@@ -92,7 +110,20 @@ class generativeSSL:
 								      self.x_test:x_test,
 								      self.y_test:Data.data['y_test']})
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
-	    writer.close()
+		    epoch += 1
+   	    if self.LOGGING:
+	        writer.close()
+
+
+    def predict_new(self, x, n_iters=100):
+	predictions = self.predict(x, n_iters)
+	saver = tf.train.Saver()
+	with tf.Session() as session:
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            saver.restore(session, ckpt.model_checkpoint_path)
+            preds = session.run([predictions])
+	return preds[0][0]
+
 
 
     def predict(self, x, n_iters=100):
@@ -180,13 +211,15 @@ class generativeSSL:
     def _process_data(self, data):
     	""" Extract relevant information from data_gen """
     	self.N = data.N
-    	self.TRAINING_SIZE = data.TRAIN_SIZE   			 # training set size
-	self.TEST_SIZE = data.TEST_SIZE                          # test set size
-	self.NUM_LABELED = data.NUM_LABELED    			 # number of labeled instances
-	self.NUM_UNLABELED = data.NUM_UNLABELED                  # number of unlabeled instances
-	self.X_DIM = data.INPUT_DIM            			 # input dimension     
-	self.NUM_CLASSES = data.NUM_CLASSES                      # number of classes
-	self.alpha = self.alpha / self.NUM_LABELED               # weighting for additional term
+    	self.TRAINING_SIZE = data.TRAIN_SIZE   	       # training set size
+	self.TEST_SIZE = data.TEST_SIZE                # test set size
+	self.NUM_LABELED = data.NUM_LABELED    	       # number of labeled instances
+	self.NUM_UNLABELED = data.NUM_UNLABELED        # number of unlabeled instances
+	self.X_DIM = data.INPUT_DIM            	       # input dimension     
+	self.NUM_CLASSES = data.NUM_CLASSES            # number of classes
+	self.alpha = self.alpha / self.NUM_LABELED     # weighting for additional term
+	self.data_name = data.NAME                     # dataset being used   
+	self._allocate_directory()                     # logging directory     
 
 
     def _create_placeholders(self):
@@ -229,4 +262,7 @@ class generativeSSL:
 
       
     def _allocate_directory(self):
-	return 'graphs/gssl-'
+	self.LOGDIR = 'graphs/gssl-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED)+'/'
+	self.ckpt_dir = './ckpt/gssl-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED) + '/'
+        if not os.path.isdir(self.ckpt_dir):
+	    os.mkdir(self.ckpt_dir)
