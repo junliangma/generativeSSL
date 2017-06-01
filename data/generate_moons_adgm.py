@@ -1,7 +1,28 @@
 from sklearn.datasets import make_moons
 import numpy as np
-from data_helper import pad_targets
-import pdb
+import pdb, pickle
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib import rc
+
+
+def pad_targets(xy):
+    """
+    Pad the targets to be 1hot.
+    :param xy: A tuple containing the x and y matrices.
+    :return: The 1hot coded dataset.
+    """
+    x, y = xy
+    classes = np.max(y) + 1
+    tmp_data_y = np.zeros((x.shape[0], classes))
+    for i, dp in zip(range(len(y)), y):
+        r = np.zeros(classes)
+        r[dp] = 1
+        tmp_data_y[i] = r
+    y = tmp_data_y
+    return x, y
+
 
 def _download():
     train_x, train_t = make_moons(n_samples=10000, shuffle=True, noise=0.2, random_state=1234)
@@ -46,9 +67,24 @@ def load_semi_supervised():
     if valid_set is not None:
         valid_set = pad_targets(valid_set)
 
-return train_set, train_set_labeled, test_set, valid_set
+    return train_set, train_set_labeled, test_set, valid_set
 
+if __name__ == "__main__":
+    train, labeled, test, valid = load_semi_supervised()
+    data = {}
+    data['x'], data['y'] = train[0], train[1]
+    data['x_labeled'], data['y_labeled'] = labeled[0], labeled[1]
+    data['x_test'], data['x_train'] = test[0], test[1]
 
-def main():
-    x_train, x_labeled, test, valid = load_semi_supervised()
-    pdb.set_trace()
+    target = './data/moons_semi.pkl'
+    with open(target, 'wb') as f:
+	pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
+   
+    plt.figure()
+    x0 = data['x'][np.where(data['y'][:,0]==1)]
+    x1 = data['x'][np.where(data['y'][:,1]==1)]
+    plt.scatter(x0[:,0], x0[:,1], color='r')
+    plt.scatter(x1[:,0], x1[:,1], color='b')
+    xlabeled = data['x_labeled']
+    plt.scatter(xlabeled[:,0], xlabeled[:,1], color='black')	
+    plt.savefig('./data/moons_plot_semi', bbox_inches='tight') 
