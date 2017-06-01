@@ -165,7 +165,7 @@ class generativeSSL:
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
 	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
-	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(weights)), axis=1)
+	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(1e-10 + weights)), axis=1)
 	return tf.add(EL_l, ent_qy)
 
 
