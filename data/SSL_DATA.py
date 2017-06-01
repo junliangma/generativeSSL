@@ -15,7 +15,7 @@ y - np array: N rows, k columns (one-hot encoding)
 
 class SSL_DATA:
     """ Class for appropriate data structures """
-    def __init__(self, x, y, x_test=None, y_test=None, train_proportion=0.7, labeled_proportion=0.3, dataset='moons'):
+    def __init__(self, x, y, x_test=None, y_test=None, x_labeled=None, y_labeled=None, train_proportion=0.7, labeled_proportion=0.3, dataset='moons'):
 	
 	self.INPUT_DIM = x.shape[1]
 	self.NUM_CLASSES = y.shape[1]
@@ -37,7 +37,10 @@ class SSL_DATA:
 	    xtrain, ytrain, xtest, ytest = self._split_data(x,y)
 	else:
 	    xtrain, ytrain, xtest, ytest = x, y, x_test, y_test
-	x_labeled, y_labeled, x_unlabeled, y_unlabeled = self._create_semisupervised(xtrain, ytrain)
+	if x_labeled is None:
+  	    x_labeled, y_labeled, x_unlabeled, y_unlabeled = self._create_semisupervised(xtrain, ytrain)
+	else:
+	    x_unlabeled, y_unlabeled = xtrain, ytrain
 
 	# create appropriate data dictionaries
 	self.data = {}
