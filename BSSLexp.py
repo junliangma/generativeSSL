@@ -36,7 +36,7 @@ if dataset == 'moons':
     z_dim = 5
     learning_rate = 2e-2
     architecture = [10,10]
-    n_epochs = 2
+    n_epochs = 50
     temperature_epochs = 1
     initVar = -5.
     type_px = 'Gaussian'

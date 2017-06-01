@@ -83,8 +83,8 @@ if __name__ == "__main__":
     plt.figure()
     x0 = data['x'][np.where(data['y'][:,0]==1)]
     x1 = data['x'][np.where(data['y'][:,1]==1)]
-    plt.scatter(x0[:,0], x0[:,1], color='r')
-    plt.scatter(x1[:,0], x1[:,1], color='b')
+    plt.scatter(x0[:,0], x0[:,1], color='r', s=1)
+    plt.scatter(x1[:,0], x1[:,1], color='b', s=1)
     xlabeled = data['x_labeled']
-    plt.scatter(xlabeled[:,0], xlabeled[:,1], color='black')	
+    plt.scatter(xlabeled[:,0], xlabeled[:,1], color='black', s=20)	
     plt.savefig('./data/moons_plot_semi', bbox_inches='tight') 
