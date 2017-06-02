@@ -9,7 +9,7 @@ import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from models.generativeSSL import generativeSSL
 from models.bgssl import bgssl
-from models.DNN import DNN as dnn
+from models.DNN import DNN 
 
 
 
@@ -23,14 +23,37 @@ labeled_batchsize, unlabeled_batchsize = 6,256
 
 if model_type == 'gssl':
     z_dim = 10
-    learning_rate = 1e-2
+    learning_rate = 1e-4
     architecture = [100,100]
-    n_epochs = 10
+    n_epochs = 50
     type_px = 'Gaussian'
     binarize = False
     logging = False
     model = generativeSSL(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
+if model_type == 'bgssl':
+    z_dim = 10
+    learning_rate = 5e-4
+    architecture = [100,100]
+    n_epochs = 150
+    temperature_epochs = 50
+    initVar = -3.
+    type_px = 'Gaussian'
+    binarize = False
+    logging = False
+    model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, 
+                temperature_epochs=temperature_epochs, initVar=initVar, TYPE_PX=type_px, logging=logging)
+
+
+if model_type == 'dnn':
+    learning_rate = 1e-2
+    architecture = [100,100]
+    batch_size = 6
+    n_epochs = 200
+    logging = False
+    model = DNN(ARCHITECTURE=architecture, BATCH_SIZE=batch_size, NUM_EPOCHS=n_epochs, LEARNING_RATE=learning_rate, logging=logging)
 
 with open(target, 'rb') as f:
     data = pickle.load(f)

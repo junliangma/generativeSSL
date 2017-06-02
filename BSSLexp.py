@@ -31,14 +31,14 @@ dataset = sys.argv[1]
 if dataset == 'moons':
     target = './data/moons.pkl'
     labeled_proportion = float(sys.argv[2])
-    labeled_batchsize, unlabeled_batchsize = 4,32
+    labeled_batchsize, unlabeled_batchsize = 4,256
     
     z_dim = 5
-    learning_rate = 2e-2
+    learning_rate = 8e-3
     architecture = [10,10]
-    n_epochs = 50
-    temperature_epochs = 1
-    initVar = -5.
+    n_epochs = 100
+    temperature_epochs = 25
+    initVar = -3.
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -112,24 +112,7 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], color='white')
     plt.scatter(x0[:,0],x0[:,1], color='black')
 
-    plt.savefig('../experiments/Moons/contour_bayesian_plot', bbox_inches='tight')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    plt.savefig('./data/contour_bayesian_plot', bbox_inches='tight')
 
 
 

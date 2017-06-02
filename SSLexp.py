@@ -22,7 +22,7 @@ def load_mnist(path='data/mnist.pkl.gz'):
 
 
 
-### Script to run an experiment with the model
+### Script to run an experiment with generative SSL model ###
 
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled
@@ -106,7 +106,7 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], color='white')
     plt.scatter(x0[:,0],x0[:,1], color='black')
     
-    plt.savefig('../experiments/Moons/contour_plot', bbox_inches='tight')
+    plt.savefig('../experiments/Moons/contour_plot_gssl', bbox_inches='tight')
 
 
 
