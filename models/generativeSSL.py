@@ -86,7 +86,7 @@ class generativeSSL:
 		  	            		     		       self.x_unlabeled: x_unlabeled})
             	if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
-                
+                #pdb.set_trace()
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
         	    saver.save(sess, self.ckpt_dir, global_step=step+1)
@@ -194,8 +194,10 @@ class generativeSSL:
     
     def _compute_loss_weights(self):
     	""" Compute scaling weights for the loss function """
-        self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
-        self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+        self.labeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
+        self.unlabeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+        #self.labeled_weight = 1.0 
+        #self.unlabeled_weight = 1.0
 
     
     def compute_acc(self, x, y):

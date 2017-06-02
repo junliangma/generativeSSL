@@ -7,20 +7,20 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 
-import pdb
+import pdb, os
 
 ### Standard feedforward DNN for comparison ###
 
 class DNN:
     """ Class defining our generative model """
-    def __init__(self, LEARNING_RATE=0.05, ARCHITECTURE=[10], BATCH_SIZE=128, NUM_EPOCHS=10, nonlinearity=tf.nn.relu):
+    def __init__(self, LEARNING_RATE=0.05, ARCHITECTURE=[10], BATCH_SIZE=128, NUM_EPOCHS=10, nonlinearity=tf.nn.relu, logging=False):
     	## Step 1: define the placeholders for input and output
     	self.lr = LEARNING_RATE	          # learning rate
         self.ARCHITECTURE = ARCHITECTURE  # network architecture
 	self.BATCH_SIZE = BATCH_SIZE      # batch size
 	self.NUM_EPOCHS = NUM_EPOCHS      # number of training epochs
 	self.NONLINEARITY = nonlinearity  # activation function
-	self.LOGDIR = self._allocate_directory()
+        self.LOGGING = logging            # log with TensorBoard
 
     def fit(self, Data):
     	self._process_data(Data)
@@ -41,33 +41,49 @@ class DNN:
 	## Step 5: compute accuracies
 	train_acc = self.compute_acc(self.x_train, self.y_train)
 	test_acc  = self.compute_acc(self.x_test, self.y_test)
-	
-        ## Step 6: initialize session and train
+	batch_acc = self.compute_acc(self.x_batch, self.y_batch)
+        
+	## Step 6: initialize session and train
         SKIP_STEP, epoch = 50, 0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
-            writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+	    saver = tf.train.Saver()
+	    if self.LOGGING:
+                writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
  	    while epoch < self.NUM_EPOCHS:
-                batch = Data.next_batch_regular(self.BATCH_SIZE)
+                x_batch, y_batch, _, _ = Data.next_batch(self.BATCH_SIZE, self.BATCH_SIZE)
             	_, loss_batch = sess.run([self.optimizer, self.loss,], 
-            			     	  feed_dict={self.x_batch: batch[0], 
-		           		    	     self.y_batch: batch[1]})
+            			     	  feed_dict={self.x_batch: x_batch, 
+		           		    	     self.y_batch: y_batch})
                 total_loss += loss_batch
-		if Data._epochs_regular > epoch:
+		#pdb.set_trace()
+		if Data._epochs_labeled > epoch:
+		    saver.save(sess, self.ckpt_dir, global_step=epoch+1)
 		    epoch += 1
-		    acc_train, acc_test,  = sess.run([train_acc, test_acc],
-						     feed_dict = {self.x_train:Data.data['x_train'],
+		    acc_train, acc_test, acc_batch  = sess.run([train_acc, test_acc, batch_acc],
+						     		feed_dict = {self.x_train:Data.data['x_train'],
 						     	 	  self.y_train:Data.data['y_train'],
 								  self.x_test:Data.data['x_test'],
-								  self.y_test:Data.data['y_test']})
-		    print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
-	    writer.close()
+								  self.y_test:Data.data['y_test'],
+								  self.x_batch:x_batch,
+								  self.y_batch:y_batch})
+		    print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}, Labeled: {:5.3f}'.format(epoch, acc_train, acc_test, acc_batch))
+	    if self.LOGGING:
+	        writer.close()
 
 
     def predict(self, x):
 	return tf.nn.softmax(self._forward_pass(x))
 
+    def predict_new(self, x):
+	predictions = self.predict(x)
+	saver = tf.train.Saver()
+	with tf.Session() as session:
+	    ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+	    saver.restore(session, ckpt.model_checkpoint_path)
+	    preds = session.run([predictions])
+        return preds[0]
 
     def compute_acc(self, x, y):
 	y_ = self.predict(x)
@@ -83,6 +99,8 @@ class DNN:
 	self.TEST_SIZE = data.TEST_SIZE                          # test set size
 	self.X_DIM = data.INPUT_DIM            			 # input dimension     
 	self.NUM_CLASSES = data.NUM_CLASSES                      # number of classes
+	self.data_name = data.NAME                               # set dataset name
+	self._allocate_directory()                               # allocate directories
 	
 
 
@@ -134,7 +152,10 @@ class DNN:
 
 
     def _allocate_directory(self):
-	return 'graphs/default/'
+	self.LOGDIR =  'graphs/dnn-'+self.data_name+'-'+str(self.TRAINING_SIZE)+'/'
+	self.ckpt_dir = './ckpt/dnn-'+self.data_name+'-'+str(self.TRAINING_SIZE)+'/'
+	if not os.path.isdir(self.ckpt_dir):
+	    os.mkdir(self.ckpt_dir)
 
 
 
