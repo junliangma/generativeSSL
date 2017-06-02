@@ -22,10 +22,10 @@ target = './data/moons_semi.pkl'
 labeled_batchsize, unlabeled_batchsize = 6,256
 
 if model_type == 'gssl':
-    z_dim = 5
+    z_dim = 10
     learning_rate = 1e-2
-    architecture = [10,10]
-    n_epochs = 150
+    architecture = [100,100]
+    n_epochs = 10
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -37,7 +37,6 @@ with open(target, 'rb') as f:
 x, y, xtest, ytest = data['x'], data['y'], data['x_test'], data['y_test']
 x_l, y_l = data['x_labeled'], data['y_labeled'] 
 data = SSL_DATA(x,y, x_test=xtest, y_test=ytest, x_labeled=x_l, y_labeled=y_l, dataset='moons_adgm') 
-
 model.fit(data)
 
 
@@ -45,12 +44,12 @@ xl,yl = data.data['x_l'], data.data['y_l']
 x1 = xl[np.where(yl[:,1]==1)]
 x0 = xl[np.where(yl[:,0]==1)]
 
-X,Y = np.mgrid[-2:2.5:0.1, -2:2.5:0.1]
+X,Y = np.mgrid[0:4.5:0.1, 0:4.5:0.1]
 xy = np.vstack((X.flatten(), Y.flatten())).T 
 predictions = model.predict_new(xy.astype('float32'))
 
 
-range_vals = np.arange(-2.0,2.5,.1)
+range_vals = np.arange(0.0,4.5,.1)
 zi = np.zeros(X.shape)
 for i, row_val in enumerate(range_vals):
     for j, col_val in enumerate(range_vals):
@@ -61,7 +60,7 @@ plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
 
 plt.scatter(x1[:,0],x1[:,1], color='white')
 plt.scatter(x0[:,0],x0[:,1], color='black')
-
+plt.show()
 plt.savefig('../experiments/Moons/moons_adgm_'+model_type, bbox_inches='tight')
 
 

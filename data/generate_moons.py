@@ -7,7 +7,7 @@ from sklearn.datasets import make_moons
 import pickle
 import pdb 
 
-x, y = make_moons(int(1e4), noise=0.1)
+x, y = make_moons(int(1e4), noise=0.2)
 y = np.eye(2)[y]
 data = {'x':x, 'y':y}
 target = './data/moons.pkl'
@@ -17,8 +17,8 @@ with open(target, 'wb') as f:
 plt.figure()
 x0 = x[np.where(y[:,0]==1)]
 x1 = x[np.where(y[:,1]==1)]
-plt.scatter(x0[:,0], x0[:,1], color='r')
-plt.scatter(x1[:,0], x1[:,1], color='b')
+plt.scatter(x0[:,0], x0[:,1], color='r', s=1)
+plt.scatter(x1[:,0], x1[:,1], color='b', s=1)
 plt.savefig('./data/moons_plot', bbox_inches='tight')
 
 
