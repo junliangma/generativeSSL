@@ -36,6 +36,8 @@ class SSL_DATA:
 	else:
 	    xtrain, ytrain, xtest, ytest = x, y, x_test, y_test
 	if x_labeled is None:
+	    self.NUM_LABELED = int(np.round(self.TRAIN_SIZE * labeled_proportion))
+	    self.NUM_UNLABELED = int(self.TRAIN_SIZE - self.NUM_LABELED)
   	    x_labeled, y_labeled, x_unlabeled, y_unlabeled = self._create_semisupervised(xtrain, ytrain)
 	else:
 	    x_unlabeled, y_unlabeled = xtrain, ytrain

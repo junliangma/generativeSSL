@@ -1,6 +1,6 @@
 from sklearn.datasets import make_moons
 import numpy as np
-import pdb, pickle
+import pdb, pickle, sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -24,10 +24,10 @@ def pad_targets(xy):
     return x, y
 
 
-def _download():
-    train_x, train_t = make_moons(n_samples=10000, shuffle=True, noise=0.2, random_state=1234)
-    test_x, test_t = make_moons(n_samples=10000, shuffle=True, noise=0.2, random_state=1234)
-    valid_x, valid_t = make_moons(n_samples=10000, shuffle=True, noise=0.2, random_state=1234)
+def _download(noise):
+    train_x, train_t = make_moons(n_samples=10000, shuffle=True, noise=noise, random_state=1234)
+    test_x, test_t = make_moons(n_samples=10000, shuffle=True, noise=noise, random_state=1234)
+    valid_x, valid_t = make_moons(n_samples=10000, shuffle=True, noise=noise, random_state=1234)
 
     train_x += np.abs(train_x.min())
     test_x += np.abs(test_x.min())
@@ -40,12 +40,12 @@ def _download():
     return train_set, test_set, valid_set
 
 
-def load_semi_supervised():
+def load_semi_supervised(noise=0.2):
     """
     Load the half moon dataset with 6 fixed labeled data points.
     """
 
-    train_set, test_set, valid_set = _download()
+    train_set, test_set, valid_set = _download(noise)
 
     # Add 6 static labels.
     train_x_l = np.zeros((6, 2))
@@ -69,8 +69,12 @@ def load_semi_supervised():
 
     return train_set, train_set_labeled, test_set, valid_set
 
+
+## argv[1] - noise level
+
 if __name__ == "__main__":
-    train, labeled, test, valid = load_semi_supervised()
+    noise = float(sys.argv[1])
+    train, labeled, test, valid = load_semi_supervised(noise)
     data = {}
     data['x'], data['y'] = train[0], train[1]
     data['x_labeled'], data['y_labeled'] = labeled[0], labeled[1]
