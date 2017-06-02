@@ -29,8 +29,6 @@ class SSL_DATA:
 	    self.TRAIN_SIZE = x.shape[0]
 	    self.TEST_SIZE = x_test.shape[0]
             self.N = self.TRAIN_SIZE + self.TEST_SIZE
-	self.NUM_LABELED = int(np.round(labeled_proportion * self.TRAIN_SIZE))
-	self.NUM_UNLABELED = int(self.TRAIN_SIZE - self.NUM_LABELED)
 
 	# create necessary data splits
     	if x_test is None:
@@ -41,6 +39,9 @@ class SSL_DATA:
   	    x_labeled, y_labeled, x_unlabeled, y_unlabeled = self._create_semisupervised(xtrain, ytrain)
 	else:
 	    x_unlabeled, y_unlabeled = xtrain, ytrain
+
+	self.NUM_LABELED = x_labeled.shape[0]
+	self.NUM_UNLABELED = x_unlabeled.shape[0]
 
 	# create appropriate data dictionaries
 	self.data = {}
