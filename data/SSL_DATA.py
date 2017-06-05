@@ -15,7 +15,7 @@ y - np array: N rows, k columns (one-hot encoding)
 
 class SSL_DATA:
     """ Class for appropriate data structures """
-    def __init__(self, x, y, x_test=None, y_test=None, x_labeled=None, y_labeled=None, train_proportion=0.7, labeled_proportion=0.3, dataset='moons'):
+    def __init__(self, x, y, x_test=None, y_test=None, x_labeled=None, y_labeled=None, train_proportion=0.7, labeled_proportion=0.3, dataset='moons', seed=None):
 	
 	self.INPUT_DIM = x.shape[1]
 	self.NUM_CLASSES = y.shape[1]
@@ -31,6 +31,8 @@ class SSL_DATA:
             self.N = self.TRAIN_SIZE + self.TEST_SIZE
 
 	# create necessary data splits
+	if seed:
+	    np.random.seed(seed)
     	if x_test is None:
 	    xtrain, ytrain, xtest, ytest = self._split_data(x,y)
 	else:

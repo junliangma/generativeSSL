@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib import rc
 import numpy as np
 from sklearn.datasets import make_moons
-import pickle
-import pdb 
+import pickle, pdb, sys
 
 ## argv[1] - noise level
 
