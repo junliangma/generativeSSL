@@ -33,12 +33,12 @@ if dataset == 'moons':
     labeled_proportion = float(sys.argv[2])
     labeled_batchsize, unlabeled_batchsize = 4,256
     
-    z_dim = 5
-    learning_rate = 8e-3
-    architecture = [10,10]
-    n_epochs = 100
+    z_dim = 10
+    learning_rate = 5e-4
+    architecture = [100,100]
+    n_epochs = 250
     temperature_epochs = 25
-    initVar = -3.
+    initVar = -10.
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -61,7 +61,7 @@ elif dataset == 'digits':
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
     labeled_proportion = 0.015
-    labeled_batchsize, unlabeled_batchsize = 64,128
+    labeled_batchsize, unlabeled_batchsize = 100,512
     x_train, y_train, x_test, y_test = load_mnist(target)
 
     z_dim = 100
@@ -69,7 +69,7 @@ elif dataset == 'mnist':
     architecture = [400, 400]
     n_epochs = 500
     temperature_epochs = 75
-    initVar = -7.
+    initVar = -10.
     type_px = 'Bernoulli'
     binarize = True
     logging = False

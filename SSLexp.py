@@ -26,19 +26,26 @@ def load_mnist(path='data/mnist.pkl.gz'):
 
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled
+## argv[3] - Dataset seed
+
 
 
 dataset = sys.argv[1]
+if len(sys.argv)==4:
+    seed = int(sys.argv[3])
+else:
+    seed = None
+
 
 if dataset == 'moons':
     target = './data/moons.pkl'
     labeled_proportion = float(sys.argv[2])
-    labeled_batchsize, unlabeled_batchsize = 4,32
+    labeled_batchsize, unlabeled_batchsize = 4,128
     
-    z_dim = 5
-    learning_rate = 1e-2
-    architecture = [10,10]
-    n_epochs = 20
+    z_dim = 10
+    learning_rate = 3e-3
+    architecture = [100,100]
+    n_epochs = 100
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -74,13 +81,13 @@ if dataset in ['moons', 'digits']:
     with open(target, 'rb') as f:
         data = pickle.load(f)
     x, y = data['x'], data['y']
-    data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset) 
+    data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed) 
 elif dataset == 'mnist':
-    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset)
+    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
 
 
 model = generativeSSL(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 model.fit(data)
 
 
@@ -106,7 +113,7 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], color='white')
     plt.scatter(x0[:,0],x0[:,1], color='black')
     
-    plt.savefig('../experiments/Moons/contour_plot_gssl', bbox_inches='tight')
+    plt.savefig('../experiments/Moons/gssl_hard_unlab_350', bbox_inches='tight')
 
 
 

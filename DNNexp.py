@@ -23,16 +23,21 @@ def load_mnist(path='data/mnist.pkl.gz'):
 
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled
+## argv[2] - dataset seed
 
 dataset = sys.argv[1]
 labeled_proportion = float(sys.argv[2])
+if len(sys.argv)==4:
+    seed = int(sys.argv[3])
+else:
+    seed = None
 
 if dataset == 'moons':
     target = './data/moons.pkl'
     network = [100, 100]
-    batchsize = 8
-    n_epochs = 150
-    learning_rate = 1e-3
+    batchsize = 4
+    n_epochs = 50
+    learning_rate = 1e-2
 
 elif dataset == 'digits':
     target = './data/digits.pkl'
@@ -47,7 +52,7 @@ x, y = data['x'], data['y']
 
 
 
-Data = SSL_DATA(x,y, labeled_proportion=labeled_proportion) 
+Data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, seed=seed) 
 model = DNN(ARCHITECTURE=network, BATCH_SIZE=batchsize, NUM_EPOCHS=n_epochs, LEARNING_RATE=learning_rate)
 model.fit(Data)
 
@@ -74,4 +79,4 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], color='white')
     plt.scatter(x0[:,0],x0[:,1], color='black')
 
-    plt.savefig('../experiments/Moons/contour_plot_dnn', bbox_inches='tight')
+    plt.savefig('../experiments/Moons/dnn_350', bbox_inches='tight')

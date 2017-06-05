@@ -19,11 +19,11 @@ from models.DNN import DNN
 
 model_type = sys.argv[1]
 target = './data/moons_semi.pkl'
-labeled_batchsize, unlabeled_batchsize = 6,256
+labeled_batchsize, unlabeled_batchsize = 6,100
 
 if model_type == 'gssl':
     z_dim = 10
-    learning_rate = 1e-4
+    learning_rate = 3e-3
     architecture = [100,100]
     n_epochs = 50
     type_px = 'Gaussian'
@@ -84,8 +84,7 @@ plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
 plt.scatter(x1[:,0],x1[:,1], color='white')
 plt.scatter(x0[:,0],x0[:,1], color='black')
 plt.show()
-plt.savefig('../experiments/Moons/moons_adgm_'+model_type, bbox_inches='tight')
-
+plt.savefig('../experiments/Moons/'+model_type+'_adgm', bbox_inches='tight')
 
 
 
