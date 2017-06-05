@@ -45,6 +45,7 @@ class generativeSSL:
         L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
         L_e = self._qxy_loss(self.x_labeled, self.labels)
         self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e], name='loss')
+        #self.loss = -tf.add(self.labeled_weight*L_l , self.unlabeled_weight*L_u,name='loss')
         
         ## define optimizer
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
@@ -84,17 +85,17 @@ class generativeSSL:
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		       self.labels: labels,
 		  	            		     		       self.x_unlabeled: x_unlabeled})
+                #pdb.set_trace()
             	if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
-                #pdb.set_trace()
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
         	    saver.save(sess, self.ckpt_dir, global_step=step+1)
-		    if self.verbose == 0:
+		    if self.verbose==0:
 		    	self._hook_loss(epoch, step, total_loss, l_l, l_u, l_e)
         	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
-		    elif self.verbose == 1:
-			   
+
+		    elif self.verbose==1:
 		        acc_train, acc_test, summary_acc = sess.run([train_acc, test_acc, self.summary_op_acc],
 						         feed_dict = {self.x_train:Data.data['x_train'],
 		  	            		     		       self.y_train:Data.data['y_train'],
@@ -103,7 +104,8 @@ class generativeSSL:
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
 			if self.LOGGING:
          	            writer.add_summary(summary_acc, global_step=epoch)
-		    elif self.verbose == 2:
+		    
+		    elif self.verbose==2:
 		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
 						         feed_dict = {self.x_train:x_train,
 						     	              self.y_train:Data.data['y_train'],
@@ -196,8 +198,8 @@ class generativeSSL:
     	""" Compute scaling weights for the loss function """
         self.labeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
         self.unlabeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
-        #self.labeled_weight = 1.0 
-        #self.unlabeled_weight = 1.0
+        #self.labeled_weight = tf.cast(self.TRAINING_SIZE / self.LABELED_BATCH_SIZE, tf.float32)
+        #self.unlabeled_weight = tf.cast(self.TRAINING_SIZE / self.UNLABELED_BATCH_SIZE, tf.float32)
 
     
     def compute_acc(self, x, y):
@@ -219,7 +221,7 @@ class generativeSSL:
 	self.NUM_UNLABELED = data.NUM_UNLABELED        # number of unlabeled instances
 	self.X_DIM = data.INPUT_DIM            	       # input dimension     
 	self.NUM_CLASSES = data.NUM_CLASSES            # number of classes
-	self.alpha = self.alpha / self.NUM_LABELED     # weighting for additional term
+	self.alpha = self.alpha * self.NUM_LABELED     # weighting for additional term
 	self.data_name = data.NAME                     # dataset being used   
 	self._allocate_directory()                     # logging directory     
 
