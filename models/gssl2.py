@@ -48,9 +48,9 @@ class gssl:
         
         ## define optimizer
 	varList = tf.trainable_variables()
-	if True:
+	if False:
 	    varList = [V for V in varList if 'Pz_x' in V.name or 'Q' in V.name]
-        pdb.set_trace()
+      
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, var_list=varList)
 	
 	## compute accuracies
@@ -91,6 +91,7 @@ class gssl:
                 #pdb.set_trace()
             	if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
+
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
         	    saver.save(sess, self.ckpt_dir, global_step=step+1)
@@ -130,17 +131,10 @@ class gssl:
 
 
     def predict(self, x, n_iters=100):
-	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
-	yq = y_
-	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
-	y_samps = tf.expand_dims(y_, axis=2)
-	for i in range(n_iters):
-	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
-	    h = tf.concat([x, z], axis=1)
-	    y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
-	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
-	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
-	return tf.reduce_mean(y_samps, axis=2), yq
+	z_, _ = dgm._forward_pass_Cat(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
+	h = tf.concat([x, z_], axis=1)
+	return dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+
 
 
     def _sample_xy(self, n_samples=int(1e3)):
@@ -158,30 +152,31 @@ class gssl:
             x,y = session.run([x_,y_])
         return x[0],y
 
-    def _sample_Z(self, x, y, n_samples):
+    def _sample_Z(self, x, n_samples):
 	""" Sample from Z with the reparamterization trick """
-	h = tf.concat([x, y], axis=1)
-	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
+	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.exp(log_var)), eps))
+	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.nn.softplus(log_var)), eps))
 
 
-    def _labeled_loss(self, x, y):
+    def _labeled_loss(self, x, y, z=None, q_mean=None, q_log_var=None):
 	""" Compute necessary terms for labeled loss (per data point) """
-	q_mean, q_log_var, z = self._sample_Z(x, y, self.Z_SAMPLES)
-	logpx = self._compute_logpx(x, z)
+	if not z:
+	    q_mean, q_log_var, z = self._sample_Z(x, self.Z_SAMPLES)
+        logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z)
-	klz = dgm._gauss_kl(q_mean, tf.exp(q_log_var))
-	return tf.add_n([logpx , logpy , -klz])
+	klz = dgm._gauss_kl(q_mean, tf.nn.softplus(q_log_var))
+	return logpx + logpy - klz
 
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
 	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	q_mean, q_log_var, z = self._sample_Z(x, self.Z_SAMPLES)
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
-	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
+	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y, x, q_mean, q_log_var))
 	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(1e-10 + weights)), axis=1)
 	return tf.add(EL_l, ent_qy)
 
@@ -195,7 +190,7 @@ class gssl:
 	""" compute the likelihood of every element in x under p(x|z) """
 	if self.TYPE_PX == 'Gaussian':
 	    mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	    mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_var))
+	    mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.nn.softplus(log_var))
 	    return mvn.log_prob(x)
 	elif self.TYPE_PX == 'Bernoulli':
 	    pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
@@ -260,7 +255,7 @@ class gssl:
 	elif self.TYPE_PX == 'Bernoulli':
 	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
     	self.Pzx_y = dgm._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Pzx_y_')
-    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z_')
+    	self.Qx_z = dgm._init_Gauss_net(self.X_DIM, self.NUM_HIDDEN, self.Z_DIM, 'Qx_z_')
     	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y_')
 
     
@@ -281,7 +276,7 @@ class gssl:
 
      
     def _allocate_directory(self):
-	self.LOGDIR = 'graphs/gssl-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED)+'/'
-	self.ckpt_dir = './ckpt/gssl-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED) + '/'
+	self.LOGDIR = 'graphs/gssl2-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED)+'/'
+	self.ckpt_dir = './ckpt/gssl2-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED) + '/'
         if not os.path.isdir(self.ckpt_dir):
 	    os.mkdir(self.ckpt_dir)
