@@ -142,6 +142,21 @@ class generativeSSL:
 	return tf.reduce_mean(y_samps, axis=2), yq
 
 
+    def _sample_xy(self, n_samples=1e3):
+    	predictions = self.predict(x, n_iters)
+	saver = tf.train.Saver()
+	with tf.Session() as session:
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            saver.restore(session, ckpt.model_checkpoint_path)
+            z_ = np.random.normal(shape=(n_samples, self.Z_DIM))
+            if self.TYPE_PX=='Gaussian':
+                x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+            else:
+            	x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+            h = tf.concat([x_,z_], axis=1)
+            y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+            x,y = sess.run([x_,y_])
+        return x,y
 
     def _sample_Z(self, x, y, n_samples):
 	""" Sample from Z with the reparamterization trick """
