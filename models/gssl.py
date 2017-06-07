@@ -87,8 +87,8 @@ class gssl:
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		       self.labels: labels,
 		  	            		     		       self.x_unlabeled: x_unlabeled})
-                pdb.set_trace()
-            	if self.LOGGING:
+            	
+		if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:

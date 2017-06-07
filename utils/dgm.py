@@ -54,35 +54,40 @@ def _gauss_kl(mean, sigma):
     return tf.contrib.distributions.kl(mvnQ, prior)
 
 
-def _init_Gauss_net(n_in, architecture, n_out):
+def _gauss_kl_mine(mean, sigma):
+    return -0.5 * tf.reduce_sum(1 + tf.log(tf.square(sigma)+1e-10) - tf.square(mean) - tf.square(sigma))
+
+
+
+def _init_Gauss_net(n_in, architecture, n_out, vname):
     """ Initialize the weights of a 2-layer network parameterizeing a Gaussian """
     weights = {}
     for i, neurons in enumerate(architecture):
         weight_name, bias_name = 'W'+str(i), 'b'+str(i)
         if i == 0:
-       	    weights[weight_name] = tf.Variable(xavier_initializer(n_in, architecture[i]))
+       	    weights[weight_name] = tf.Variable(xavier_initializer(n_in, architecture[i]), name=vname+weight_name)
     	else:
-    	    weights[weight_name] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]))
-    	weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1)
-    weights['Wmean'] = tf.Variable(xavier_initializer(architecture[-1], n_out))
-    weights['bmean'] = tf.Variable(tf.zeros(n_out) + 1e-1)
-    weights['Wvar'] = tf.Variable(xavier_initializer(architecture[-1], n_out))
-    weights['bvar'] = tf.Variable(tf.zeros(n_out) + 1e-1)
+    	    weights[weight_name] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]), name=vname+weight_name)
+    	weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1, name=vname+bias_name)
+    weights['Wmean'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wmean')
+    weights['bmean'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bmean')
+    weights['Wvar'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wvar')
+    weights['bvar'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bvar')
     return weights
 
 
-def _init_Cat_net(n_in, architecture, n_out):
+def _init_Cat_net(n_in, architecture, n_out, vname):
     """ Initialize the weights of a 2-layer network parameterizeing a Categorical """
     weights = {}
     for i, neurons in enumerate(architecture):
         weight_name, bias_name = 'W'+str(i), 'b'+str(i)
         if i == 0:
-            weights[weight_name] = tf.Variable(xavier_initializer(n_in, architecture[i]))
+            weights[weight_name] = tf.Variable(xavier_initializer(n_in, architecture[i]), name=vname+weight_name)
     	else:
-    	    weights[weight_name] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]))
-    	weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1)
-    weights['Wout'] = tf.Variable(xavier_initializer(architecture[-1], n_out))
-    weights['bout'] = tf.Variable(tf.zeros(n_out) + 1e-1)
+    	    weights[weight_name] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]), name=vname+weight_name)
+    	weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1, name=vname+bias_name)
+    weights['Wout'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wout')
+    weights['bout'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bout')
     return weights
 
 
