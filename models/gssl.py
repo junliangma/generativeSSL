@@ -13,7 +13,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 """ Generative models for labels with stochastic inputs: P(Z)P(X|Z)P(Y|X,Z) """
 
-class generativeSSL:
+class gssl:
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, 
                  LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
@@ -39,16 +39,18 @@ class generativeSSL:
 	self._create_placeholders() 
         self._initialize_networks()
         
-        ## define loss function
+	## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_sum(self._labeled_loss(self.x_labeled, self.labels))
         L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
         L_e = self._qxy_loss(self.x_labeled, self.labels)
         self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e], name='loss')
-        #self.loss = -tf.add(self.labeled_weight*L_l , self.unlabeled_weight*L_u,name='loss')
         
         ## define optimizer
-        self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
+	varList = tf.trainable_variables()
+	if False:
+	    varList = [V for V in varList if 'Pz_x' in V.name or 'Q' in V.name]
+        self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, var_list=varList)
 	
 	## compute accuracies
 	train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
@@ -85,23 +87,21 @@ class generativeSSL:
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		       self.labels: labels,
 		  	            		     		       self.x_unlabeled: x_unlabeled})
-                #pdb.set_trace()
+                pdb.set_trace()
             	if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
         	    saver.save(sess, self.ckpt_dir, global_step=step+1)
 		    if self.verbose==0:
-		    	self._hook_loss(epoch, step, total_loss, l_l, l_u, l_e)
-        	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
-
-		    elif self.verbose==1:
 		        acc_train, acc_test, summary_acc = sess.run([train_acc, test_acc, self.summary_op_acc],
 						         feed_dict = {self.x_train:Data.data['x_train'],
 		  	            		     		       self.y_train:Data.data['y_train'],
 		  	            		     		       self.x_test:Data.data['x_test'],
 		  	            		     		       self.y_test:Data.data['y_test']})
-		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
+		    	self._hook_loss(epoch, step, total_loss, l_l, l_u, l_e, acc_train, acc_test)
+        	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
+
 			if self.LOGGING:
          	            writer.add_summary(summary_acc, global_step=epoch)
 		    
@@ -142,28 +142,27 @@ class generativeSSL:
 	return tf.reduce_mean(y_samps, axis=2), yq
 
 
-    def _sample_xy(self, n_samples=1e3):
-    	predictions = self.predict(x, n_iters)
+    def _sample_xy(self, n_samples=int(1e3)):
 	saver = tf.train.Saver()
 	with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
-            z_ = np.random.normal(shape=(n_samples, self.Z_DIM))
+            z_ = np.random.normal(size=(n_samples, self.Z_DIM)).astype('float32')
             if self.TYPE_PX=='Gaussian':
                 x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
             else:
             	x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-            h = tf.concat([x_,z_], axis=1)
+            h = tf.concat([x_[0],z_], axis=1)
             y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
-            x,y = sess.run([x_,y_])
-        return x,y
+            x,y = session.run([x_,y_])
+        return x[0],y
 
     def _sample_Z(self, x, y, n_samples):
 	""" Sample from Z with the reparamterization trick """
 	h = tf.concat([x, y], axis=1)
 	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.exp(log_var)), eps))
+	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.nn.softplus(log_var)), eps))
 
 
     def _labeled_loss(self, x, y):
@@ -171,7 +170,7 @@ class generativeSSL:
 	q_mean, q_log_var, z = self._sample_Z(x, y, self.Z_SAMPLES)
 	logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z)
-	klz = dgm._gauss_kl(q_mean, tf.exp(q_log_var))
+	klz = dgm._gauss_kl(q_mean, tf.nn.softplus(q_log_var))
 	return tf.add_n([logpx , logpy , -klz])
 
 
@@ -195,7 +194,7 @@ class generativeSSL:
 	""" compute the likelihood of every element in x under p(x|z) """
 	if self.TYPE_PX == 'Gaussian':
 	    mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	    mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.exp(log_var))
+	    mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.nn.softplus(log_var))
 	    return mvn.log_prob(x)
 	elif self.TYPE_PX == 'Bernoulli':
 	    pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
@@ -211,10 +210,10 @@ class generativeSSL:
     
     def _compute_loss_weights(self):
     	""" Compute scaling weights for the loss function """
-        self.labeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
-        self.unlabeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
-        #self.labeled_weight = tf.cast(self.TRAINING_SIZE / self.LABELED_BATCH_SIZE, tf.float32)
-        #self.unlabeled_weight = tf.cast(self.TRAINING_SIZE / self.UNLABELED_BATCH_SIZE, tf.float32)
+        #self.labeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
+        #self.unlabeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+        self.labeled_weight = tf.cast(self.TRAINING_SIZE / self.LABELED_BATCH_SIZE, tf.float32)
+        self.unlabeled_weight = tf.cast(self.TRAINING_SIZE / self.UNLABELED_BATCH_SIZE, tf.float32)
 
     
     def compute_acc(self, x, y):
@@ -256,12 +255,12 @@ class generativeSSL:
     def _initialize_networks(self):
     	""" Initialize all model networks """
 	if self.TYPE_PX == 'Gaussian':
-      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
+      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
 	elif self.TYPE_PX == 'Bernoulli':
-	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
-    	self.Pzx_y = dgm._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
-    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
-    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
+    	self.Pzx_y = dgm._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Pzx_y_')
+    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z_')
+    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y_')
 
     
 
@@ -272,14 +271,14 @@ class generativeSSL:
 	return tf.constant(y, dtype=tf.float32)
 
 
-    def _hook_loss(self, epoch, SKIP_STEP, total_loss, l_l, l_u, l_e):
-    	print('Epoch {}: Total:{:5.1f}, Labeled:{:5.1f}, unlabeled:{:5.1f}, Additional:{:5.1f}'.format(epoch, 
-											 	      total_loss/SKIP_STEP,
-												      l_l/SKIP_STEP,
-												      l_u/SKIP_STEP,
-												      l_e/SKIP_STEP))
+    def _hook_loss(self, epoch, SKIP_STEP, total_loss, l_l, l_u, l_e, acc_train, acc_test):
+    	print("Epoch {}: Total:{:5.1f}, Labeled:{:5.1f}, unlabeled:{:5.1f}, " 
+              "Additional:{:5.1f}, Training: {:5.3f}, Test: {:5.3f}".format(epoch, 
+									    total_loss/SKIP_STEP,l_l/SKIP_STEP,
+									    l_u/SKIP_STEP,l_e/SKIP_STEP,
+									    acc_train, acc_test))
 
-      
+     
     def _allocate_directory(self):
 	self.LOGDIR = 'graphs/gssl-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED)+'/'
 	self.ckpt_dir = './ckpt/gssl-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED) + '/'

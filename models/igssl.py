@@ -13,7 +13,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 """ Generative models for labels with stochastic inputs: P(Z)P(X|Z)P(Y|X,Z) """
 
-class gssl:
+class igssl:
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, 
                  LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
@@ -54,8 +54,8 @@ class gssl:
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, var_list=varList)
 	
 	## compute accuracies
-	train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
-	test_acc, test_acc_q = self.compute_acc(self.x_test, self.y_test)
+	train_acc = self.compute_acc(self.x_train, self.y_train)
+	test_acc = self.compute_acc(self.x_test, self.y_test)
 
 	## create summaries for tracking
 	with tf.name_scope("summaries_elbo"):
@@ -126,12 +126,12 @@ class gssl:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
             preds = session.run([predictions])
-	return preds[0][0]
+	return preds[0]
 
 
 
     def predict(self, x, n_iters=100):
-	z_, _ = dgm._forward_pass_Cat(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
+	z_, _ = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	h = tf.concat([x, z_], axis=1)
 	return dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 
@@ -159,13 +159,13 @@ class gssl:
 	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.nn.softplus(log_var)), eps))
 
 
-    def _labeled_loss(self, x, y, z=None, q_mean=None, q_log_var=None):
+    def _labeled_loss(self, x, y, z=None, q_mean=None, q_logvar=None):
 	""" Compute necessary terms for labeled loss (per data point) """
-	if not z:
-	    q_mean, q_log_var, z = self._sample_Z(x, self.Z_SAMPLES)
+	if z==None:
+	    q_mean, q_logvar, z = self._sample_Z(x, self.Z_SAMPLES)
         logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z)
-	klz = dgm._gauss_kl(q_mean, tf.nn.softplus(q_log_var))
+	klz = dgm._gauss_kl(q_mean, tf.nn.softplus(q_logvar))
 	return logpx + logpy - klz
 
 
@@ -176,7 +176,7 @@ class gssl:
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
-	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y, x, q_mean, q_log_var))
+	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y, z, q_mean, q_log_var))
 	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(1e-10 + weights)), axis=1)
 	return tf.add(EL_l, ent_qy)
 
@@ -213,10 +213,8 @@ class gssl:
 
     
     def compute_acc(self, x, y):
-	y_, yq = self.predict(x)
-	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	acc_q =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(yq,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	return acc, acc_q
+	y_ = self.predict(x)
+	return tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
 
     def _binarize(self, x):
 	return np.random.binomial(1, x)
