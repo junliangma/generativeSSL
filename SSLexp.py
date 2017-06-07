@@ -7,7 +7,7 @@ import pickle, sys, pdb, gzip, cPickle
 import numpy as np
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
-from models.generativeSSL import generativeSSL
+from models.gssl import gssl
 
 def encode_onehot(labels):
     n, d = labels.shape[0], np.max(labels)+1
@@ -43,7 +43,7 @@ if dataset == 'moons':
     labeled_batchsize, unlabeled_batchsize = 4,128
     
     z_dim = 10
-    learning_rate = 3e-3
+    learning_rate = 5e-3
     architecture = [100,100]
     n_epochs = 100
     type_px = 'Gaussian'
@@ -86,7 +86,7 @@ elif dataset == 'mnist':
     data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
 
 
-model = generativeSSL(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
+model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 model.fit(data)
 
@@ -113,7 +113,7 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], color='white')
     plt.scatter(x0[:,0],x0[:,1], color='black')
     
-    plt.savefig('../experiments/Moons/gssl_hard_unlab_350', bbox_inches='tight')
+    plt.savefig('../experiments/Moons/trial', bbox_inches='tight')
 
 
 

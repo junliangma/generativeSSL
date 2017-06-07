@@ -7,7 +7,8 @@ import pickle, sys, pdb, gzip, cPickle
 import numpy as np
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
-from models.generativeSSL import generativeSSL
+from models.gssl import gssl
+from models.igssl import igssl
 from models.bgssl import bgssl
 from models.DNN import DNN 
 
@@ -29,8 +30,21 @@ if model_type == 'gssl':
     type_px = 'Gaussian'
     binarize = False
     logging = False
-    model = generativeSSL(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+    model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
+
+if model_type == 'igssl':
+    z_dim = 10
+    learning_rate = 1e-4
+    architecture = [100,100]
+    n_epochs = 250
+    type_px = 'Gaussian'
+    binarize = False
+    logging = False
+    model = igssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
 
 if model_type == 'bgssl':
     z_dim = 10
@@ -57,11 +71,11 @@ if model_type == 'dnn':
 
 with open(target, 'rb') as f:
     data = pickle.load(f)
+
 x, y, xtest, ytest = data['x'], data['y'], data['x_test'], data['y_test']
 x_l, y_l = data['x_labeled'], data['y_labeled'] 
 data = SSL_DATA(x,y, x_test=xtest, y_test=ytest, x_labeled=x_l, y_labeled=y_l, dataset='moons_adgm') 
 model.fit(data)
-
 
 xl,yl = data.data['x_l'], data.data['y_l']
 x1 = xl[np.where(yl[:,1]==1)]
