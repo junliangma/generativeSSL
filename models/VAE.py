@@ -3,6 +3,9 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 import utils.dgm as dgm
 import tensorflow as tf
@@ -58,11 +61,13 @@ class VAE:
 
     	    while epoch < self.NUM_EPOCHS:
     	    	x_batch, _ = Data.next_batch_regular(self.BATCH_SIZE)
+		pdb.set_trace()
 		if self.BINARIZE:
 		    x_batch = self._binarize(x)
 	        feed_dict = {self.x_batch:x_batch, self.x_train:Data.data['x_train'], self.x_test:Data.data['x_test']}
     	    	_, loss_batch, summary = sess.run([self.optimizer, self.loss, self.summary_op], feed_dict=feed_dict)
 		
+		pdb.set_trace()
 		if self.LOGGING:
 		    writer.add_summary(summary, global_step=step)
     	    	total_loss += loss_batch

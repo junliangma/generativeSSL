@@ -37,7 +37,7 @@ else:
 
 if dataset == 'moons':
     target = './data/moons.pkl'
-    batchsize = 128
+    batchsize = 512
 
     z_dim = 10
     learning_rate = 1e-3
