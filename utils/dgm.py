@@ -46,17 +46,23 @@ def _forward_pass_Cat_logits(x, weights, n_h, nonlinearity):
     return logits
 
 
+#def _gauss_kl(mean, sigma):
+#    """ compute the KL-divergence of a Gaussian against N(0,1) """
+#    mean_0, sigma_0 = tf.zeros_like(mean), tf.ones_like(sigma)
+#    mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)      
+#    prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)  
+#    return tf.contrib.distributions.kl(mvnQ, prior)
+
+
 def _gauss_kl(mean, sigma):
-    """ compute the KL-divergence of a Gaussian against N(0,1) """
-    mean_0, sigma_0 = tf.zeros_like(mean), tf.ones_like(sigma)
-    mvnQ = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=sigma)      
-    prior = tf.contrib.distributions.MultivariateNormalDiag(loc=mean_0, scale_diag=sigma_0)  
-    return tf.contrib.distributions.kl(mvnQ, prior)
+    return -0.5 * tf.reduce_sum(1 + tf.log(sigma**2+1e-10) - mean**2 - sigma**2, axis=1)
 
 
-def _gauss_kl_mine(mean, sigma):
-    return -0.5 * tf.reduce_sum(1 + tf.log(tf.square(sigma)+1e-10) - tf.square(mean) - tf.square(sigma))
-
+def _gauss_logp(x, mu, sigma):
+        b_size = tf.cast(tf.shape(mu)[0], tf.float32)
+	D = tf.cast(tf.shape(x)[1], tf.float32)
+        xc = x - mu
+        return -0.5*(tf.reduce_sum((xc * xc) / (sigma**2), axis=1) + tf.reduce_sum(tf.log(sigma**2+1e-10), axis=1) + D * tf.log(2.0*np.pi))
 
 
 def _init_Gauss_net(n_in, architecture, n_out, vname):
@@ -72,7 +78,7 @@ def _init_Gauss_net(n_in, architecture, n_out, vname):
     weights['Wmean'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wmean')
     weights['bmean'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bmean')
     weights['Wvar'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wvar')
-    weights['bvar'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bvar')
+    weights['bvar'] = tf.Variable(tf.zeros(n_out) + 1e-1 , name=vname+'bvar')
     return weights
 
 
@@ -91,23 +97,23 @@ def _init_Cat_net(n_in, architecture, n_out, vname):
     return weights
 
 
-def _init_Cat_bnn(n_in, architecture, n_out, initVar=-5):
+def _init_Cat_bnn(n_in, architecture, n_out, vname, initVar=-5):
     weights = {}
     for i, neurons in enumerate(architecture):
         weight_mean, bias_mean = 'W'+str(i)+'_mean', 'b'+str(i)+'_mean'
         weight_logvar, bias_logvar = 'W'+str(i)+'_logvar', 'b'+str(i)+'_logvar'
         if i == 0:
-            weights[weight_mean] = tf.Variable(xavier_initializer(n_in, architecture[i]))
-            weights[weight_logvar] = tf.Variable(tf.fill([n_in, architecture[i]], initVar))
+            weights[weight_mean] = tf.Variable(xavier_initializer(n_in, architecture[i]), name=vname+weight_mean)
+            weights[weight_logvar] = tf.Variable(tf.fill([n_in, architecture[i]], initVar), name=vname+weight_logvar)
         else:
-            weights[weight_mean] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]))
-            weights[weight_logvar] = tf.Variable(tf.fill([architecture[i-1], architecture[i]], initVar))
-        weights[bias_mean] = tf.Variable(tf.zeros(architecture[i]) + 1e-1)
-        weights[bias_logvar] = tf.Variable(tf.fill([architecture[i]], initVar))
-    weights['Wout_mean'] = tf.Variable(xavier_initializer(architecture[-1], n_out))
-    weights['Wout_logvar'] = tf.Variable(tf.fill([architecture[-1], n_out], initVar))
-    weights['bout_mean'] = tf.Variable(tf.zeros(n_out) + 1e-1)
-    weights['bout_logvar'] = tf.Variable(tf.fill([n_out], value = initVar))
+            weights[weight_mean] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]), name=vname+weight_mean)
+            weights[weight_logvar] = tf.Variable(tf.fill([architecture[i-1], architecture[i]], initVar), name=vname+weight_logvar)
+        weights[bias_mean] = tf.Variable(tf.zeros(architecture[i]) + 1e-1, name=vname+bias_mean)
+        weights[bias_logvar] = tf.Variable(tf.fill([architecture[i]], initVar), name=vname+weight_logvar)
+    weights['Wout_mean'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wout_mean')
+    weights['Wout_logvar'] = tf.Variable(tf.fill([architecture[-1], n_out], initVar), name=vname+'Wout_logvar')
+    weights['bout_mean'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bout_mean')
+    weights['bout_logvar'] = tf.Variable(tf.fill([n_out], value = initVar), name=vname+'bout_logvar')
     return weights
 
 

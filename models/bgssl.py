@@ -148,8 +148,8 @@ class bgssl:
 	""" Sample from Z with the reparamterization trick """
 	h = tf.concat([x, y], axis=1)
 	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
-	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.nn.softplus(log_var)), eps))
+	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], dtype=tf.float32)
+	return mean, log_var, tf.add(mean, tf.multiply(tf.nn.softplus(log_var), eps))
 
 
     def _sample_W(self):
@@ -159,16 +159,16 @@ class bgssl:
 	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
 	    mean_W, mean_b = self.Pzx_y['W'+str(i)+'_mean'], self.Pzx_y['b'+str(i)+'_mean']
             logvar_W, logvar_b = self.Pzx_y['W'+str(i)+'_logvar'], self.Pzx_y['b'+str(i)+'_logvar']
-	    eps_W = tf.random_normal(mean_W.get_shape(), 0, 1, dtype=tf.float32)
-	    eps_b = tf.random_normal(mean_b.get_shape(), 0, 1, dtype=tf.float32)
-	    weights[weight_name] = tf.add(mean_W, tf.multiply(tf.sqrt(tf.nn.softplus(logvar_W)), eps_W))
-	    weights[bias_name] = tf.add(mean_b, tf.multiply(tf.sqrt(tf.nn.softplus(logvar_b)), eps_b))
+	    eps_W = tf.random_normal(mean_W.get_shape(), dtype=tf.float32)
+	    eps_b = tf.random_normal(mean_b.get_shape(), dtype=tf.float32)
+	    weights[weight_name] = tf.add(mean_W, tf.multiply(tf.nn.softplus(logvar_W), eps_W))
+	    weights[bias_name] = tf.add(mean_b, tf.multiply(tf.nn.softplus(logvar_b), eps_b))
 	mean_W, logvar_W = self.Pzx_y['Wout_mean'], self.Pzx_y['Wout_logvar']
 	mean_b, logvar_b = self.Pzx_y['bout_mean'], self.Pzx_y['bout_logvar']
-	eps_W = tf.random_normal(mean_W.get_shape(), 0, 1, dtype=tf.float32)
-	eps_b = tf.random_normal(mean_b.get_shape(), 0, 1, dtype=tf.float32)
-	weights['Wout'] = tf.add(mean_W, tf.multiply(tf.sqrt(tf.nn.softplus(logvar_W)), eps_W))
-	weights['bout'] = tf.add(mean_b, tf.multiply(tf.sqrt(tf.nn.softplus(logvar_b)), eps_b))
+	eps_W = tf.random_normal(mean_W.get_shape(), dtype=tf.float32)
+	eps_b = tf.random_normal(mean_b.get_shape(), dtype=tf.float32)
+	weights['Wout'] = tf.add(mean_W, tf.multiply(tf.nn.softplus(logvar_W), eps_W))
+	weights['bout'] = tf.add(mean_b, tf.multiply(tf.nn.softplus(logvar_b), eps_b))
 	return weights
 
 
@@ -179,7 +179,7 @@ class bgssl:
 	logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z, w)
 	klz = dgm._gauss_kl(q_mean, tf.nn.softplus(q_logvar))
-	klw = self.beta * (self._kl_W() / tf.cast(self.N, tf.float32))
+	klw = (self._kl_W() / tf.cast(self.N, tf.float32))
 	return logpx + logpy  - klz - klw
 
     def _labeled_loss(self, x, y):
@@ -254,8 +254,10 @@ class bgssl:
  
     def _compute_loss_weights(self):
     	""" Compute scaling weights for the loss function """
-        self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
-        self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+        #self.labeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
+        #self.unlabeled_weight = tf.cast(tf.divide(self.N , tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
+	self.labeled_weight = tf.cast(self.TRAINING_SIZE / self.LABELED_BATCH_SIZE, tf.float32)
+	self.unlabeled_weight = tf.cast(self.TRAINING_SIZE / self.UNLABELED_BATCH_SIZE, tf.float32)
    
  
     def compute_acc(self, x, y):
@@ -297,12 +299,12 @@ class bgssl:
     def _initialize_networks(self):
     	""" Initialize all model networks """
 	if self.TYPE_PX == 'Gaussian':
-      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
+      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
 	elif self.TYPE_PX == 'Bernoulli':
-	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM)
-    	self.Pzx_y = dgm._init_Cat_bnn(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, self.initVar)
-    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM)
-    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES)
+	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
+    	self.Pzx_y = dgm._init_Cat_bnn(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Pzx_y', self.initVar)
+    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z')
+    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y')
 
 
     def _set_schedule(self):

@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division 
 from __future__ import print_function
 
+from models.model import model
+
 import sys, os, pdb
 
 import numpy as np
@@ -13,24 +15,19 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 """ Generative models for labels with stochastic inputs: P(Z)P(X|Z)P(Y|X,Z) """
 
-class igssl:
+class igssl(model):
    
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, 
-                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
-    	## Step 1: define the placeholders for input and output
-    	self.Z_DIM = Z_DIM                                   # stochastic inputs dimension       
-    	self.NUM_HIDDEN = NUM_HIDDEN                         # (list) number of hidden layers/neurons per network
-    	self.NONLINEARITY = NONLINEARITY		     # activation functions	
- 	self.TYPE_PX = TYPE_PX				     # Distribution of X (Gaussian, Bernoulli)	
-    	self.lr = LEARNING_RATE 			     # learning rate
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=None, 
+                 WARMUP=20, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
+	
+	super(igssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
+
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
+	self.WARMUP = WARMUP                                 # warmup period for VAE
     	self.alpha = ALPHA 				     # weighting for additional term
-    	self.Z_SAMPLES = Z_SAMPLES 			     # number of monte-carlo samples
-    	self.NUM_EPOCHS = NUM_EPOCHS                         # training epochs
-	self.BINARIZE = BINARIZE                             # sample inputs from Bernoulli distribution if true 
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
-	self.LOGGING = logging                               # use tensorflow logging
+	self.name = 'igssl'                                  # model name
     
 
     def fit(self, Data):
@@ -38,21 +35,21 @@ class igssl:
     	
 	self._create_placeholders() 
         self._initialize_networks()
+	self._set_schedule()
         
 	## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_sum(self._labeled_loss(self.x_labeled, self.labels))
         L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
-        L_e = self._qxy_loss(self.x_labeled, self.labels)
-        self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e], name='loss')
+        L_e = tf.reduce_sum(self._qxy_loss(self.x_labeled, self.labels))
+        vae_loss, l_px, klz = self._vae_loss(self.x_unlabeled)
+	weight_prior = self._weight_regularization()
+        self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e, weight_prior], name='loss')
+        self.vae_loss = -vae_loss + weight_prior
         
-        ## define optimizer
-	varList = tf.trainable_variables()
-	if False:
-	    varList = [V for V in varList if 'Pz_x' in V.name or 'Q' in V.name]
-      
-        self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, var_list=varList)
-	
+	## define optimizer
+        self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
+	self.vae_optimizer = tf.train.AdamOptimizer(1e-4).minimize(self.vae_loss)
 	## compute accuracies
 	train_acc = self.compute_acc(self.x_train, self.y_train)
 	test_acc = self.compute_acc(self.x_test, self.y_test)
@@ -73,14 +70,29 @@ class igssl:
 
 
         ## initialize session and train
-        SKIP_STEP, epoch, step = 50, 0, 0
+        SKIP_STEP, epoch, step, step2epoch = 50, 0, 0, np.round(self.TRAINING_SIZE / self.UNLABELED_BATCH_SIZE)
 	with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
 	    saver = tf.train.Saver()
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+
+	    # VAE warmup
+	    #while epoch < 50:
+		#self.beta = self.schedule[epoch]
+		#x_unlabeled, _ = Data.next_batch_regular(self.UNLABELED_BATCH_SIZE)
+		#_, lp, kl = sess.run([self.vae_optimizer, l_px, klz], feed_dict={self.x_unlabeled:x_unlabeled})
+		#step +=1
+		#if step > step2epoch:
+		#    print('Warmup epoch: {}, logpx: {:5.3f}, KL: {:5.3f}'.format(epoch, lp, kl))
+		#    epoch +=1 
+		#    step = 0
+
+	    # Joint training
+	    epoch, step = 0, 0
             while epoch < self.NUM_EPOCHS:
+		self.beta = self.schedule[epoch]
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
@@ -88,7 +100,6 @@ class igssl:
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		       self.labels: labels,
 		  	            		     		       self.x_unlabeled: x_unlabeled})
-                #pdb.set_trace()
             	if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
 
@@ -106,6 +117,21 @@ class igssl:
 
 			if self.LOGGING:
          	            writer.add_summary(summary_acc, global_step=epoch)
+
+		    elif self.verbose==1:
+			""" Print semi-supervised aspects """
+                        fd = {self.x_train:Data.data['x_train'], self.y_train:Data.data['y_train'],
+                              self.x_test:Data.data['x_test'], self.y_test:Data.data['y_test'],
+                              self.x_labeled:x_labeled, self.labels:labels}
+
+                        zm_test, zlv_test, z_test = self._sample_Z(self.x_test,1)
+                        zm_train, zlv_train, z_train = self._sample_Z(self.x_train,1)
+                        lpx_test, lpx_train,klz_test,klz_train, acc_train, acc_test = sess.run([self._compute_logpx(self.x_test, z_test),
+                                                                  self._compute_logpx(self.x_train, z_train),
+                                                                  dgm._gauss_kl(zm_test, tf.exp(zlv_test)),
+                                                                  dgm._gauss_kl(zm_train, tf.exp(zlv_train)),
+                                                                  train_acc, test_acc], feed_dict=fd)
+                        print('At epoch {}: logpx:{:5.3f}, KLz: {:5.3f}, Training: {:5.3f}, Test: {:5.3f}'.format(epoch,np.mean(lpx_train), np.mean(klz_train),acc_train, acc_test))
 		    
 		    elif self.verbose==2:
 		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
@@ -155,8 +181,8 @@ class igssl:
     def _sample_Z(self, x, n_samples):
 	""" Sample from Z with the reparamterization trick """
 	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
-	eps = tf.random_normal([n_samples, self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, tf.add(mean, tf.multiply(tf.sqrt(tf.nn.softplus(log_var)), eps))
+	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
+	return mean, log_var, tf.add(mean, tf.multiply(tf.exp(log_var), eps))
 
 
     def _labeled_loss(self, x, y, z=None, q_mean=None, q_logvar=None):
@@ -165,8 +191,8 @@ class igssl:
 	    q_mean, q_logvar, z = self._sample_Z(x, self.Z_SAMPLES)
         logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z)
-	klz = dgm._gauss_kl(q_mean, tf.nn.softplus(q_logvar))
-	return logpx + logpy - klz
+	klz = dgm._gauss_kl(q_mean, tf.exp(q_logvar))
+	return logpx + logpy - self.beta * klz
 
 
     def _unlabeled_loss(self, x):
@@ -183,27 +209,19 @@ class igssl:
 
     def _qxy_loss(self, x, y):
 	y_ = dgm._forward_pass_Cat_logits(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
-	return -tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_))
-
-
-    def _compute_logpx(self, x, z):
-	""" compute the likelihood of every element in x under p(x|z) """
-	if self.TYPE_PX == 'Gaussian':
-	    mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	    mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=mean, scale_diag=tf.nn.softplus(log_var))
-	    return mvn.log_prob(x)
-	elif self.TYPE_PX == 'Bernoulli':
-	    pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	    return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi),  (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)
-
-
-    def _compute_logpy(self, y, x, z):
-	""" compute the likelihood of every element in y under p(y|x,z) """
-	h = tf.concat([x,z], axis=1)
-	y_ = dgm._forward_pass_Cat_logits(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
-    
+
+    def _vae_loss(self, x):
+ 	z_mean, z_log_var, z = self._sample_Z(x,1)
+        KLz = dgm._gauss_kl(z_mean, tf.exp(z_log_var))
+        l_qz = dgm._gauss_logp(z, z_mean, tf.exp(z_log_var))
+        l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.ones_like(z))
+        l_px = self._compute_logpx(x, z)
+        total_elbo = l_px + self.beta * (l_pz - l_qz)
+        return tf.reduce_sum(total_elbo), tf.reduce_mean(l_px), tf.reduce_mean(KLz)
+
+
     def _compute_loss_weights(self):
     	""" Compute scaling weights for the loss function """
         #self.labeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
@@ -215,36 +233,6 @@ class igssl:
     def compute_acc(self, x, y):
 	y_ = self.predict(x)
 	return tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
-
-    def _binarize(self, x):
-	return np.random.binomial(1, x)
-
-
-    def _process_data(self, data):
-    	""" Extract relevant information from data_gen """
-    	self.N = data.N
-    	self.TRAINING_SIZE = data.TRAIN_SIZE   	       # training set size
-	self.TEST_SIZE = data.TEST_SIZE                # test set size
-	self.NUM_LABELED = data.NUM_LABELED    	       # number of labeled instances
-	self.NUM_UNLABELED = data.NUM_UNLABELED        # number of unlabeled instances
-	self.X_DIM = data.INPUT_DIM            	       # input dimension     
-	self.NUM_CLASSES = data.NUM_CLASSES            # number of classes
-	self.alpha = self.alpha * self.NUM_LABELED     # weighting for additional term
-	self.data_name = data.NAME                     # dataset being used   
-	self._allocate_directory()                     # logging directory     
-
-
-    def _create_placeholders(self):
- 	""" Create input/output placeholders """
-	self.x_labeled = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.X_DIM], name='labeled_input')
-    	self.x_unlabeled = tf.placeholder(tf.float32, shape=[self.UNLABELED_BATCH_SIZE, self.X_DIM], name='unlabeled_input')
-    	self.labels = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.NUM_CLASSES], name='labels')
-	self.x_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.X_DIM], name='x_train')
-	self.y_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.NUM_CLASSES], name='y_train')
-	self.x_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.X_DIM], name='x_test')
-	self.y_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.NUM_CLASSES], name='y_test')
-    	
-
 
     def _initialize_networks(self):
     	""" Initialize all model networks """
@@ -272,9 +260,3 @@ class igssl:
 									    l_u/SKIP_STEP,l_e/SKIP_STEP,
 									    acc_train, acc_test))
 
-     
-    def _allocate_directory(self):
-	self.LOGDIR = 'graphs/gssl2-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED)+'/'
-	self.ckpt_dir = './ckpt/gssl2-'+self.data_name+'-'+str(self.lr)+'-'+str(self.NUM_LABELED) + '/'
-        if not os.path.isdir(self.ckpt_dir):
-	    os.mkdir(self.ckpt_dir)
