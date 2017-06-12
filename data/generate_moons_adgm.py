@@ -80,7 +80,7 @@ if __name__ == "__main__":
     data['x_labeled'], data['y_labeled'] = labeled[0], labeled[1]
     data['x_test'], data['y_test'] = test[0], test[1]
 
-    target = './data/moons_semi.pkl'
+    target = './data/moons_semi_'+str(noise)+'.pkl'
     with open(target, 'wb') as f:
 	pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
    

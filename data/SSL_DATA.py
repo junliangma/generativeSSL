@@ -189,4 +189,18 @@ class SSL_DATA:
       	    end = self._start_regular
 	    return self.data['x_train'][start:end,:], self.data['y_train'][start:end,:]
 
+  
+    def next_batch_shuffle(self, batch_size):
+	""" Return a random subsample of the data """
+	perm0 = np.arange(self.TRAIN_SIZE)
+        np.random.shuffle(perm0)
+        self.data['x_train'], self.data['y_train'] = self.data['x_train'][perm0,:], self.data['y_train'][perm0,:]
+	return self.data['x_train'][:batch_size], self.data['y_train'][:batch_size]
+
+
+
+
+
+
+
 
