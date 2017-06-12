@@ -25,8 +25,10 @@ def load_mnist(path='data/mnist.pkl.gz'):
 
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled
+## argv[3] - dataset seed
 
 dataset = sys.argv[1]
+seed = int(sys.argv[3])
 
 if dataset == 'moons':
     target = './data/moons.pkl'
@@ -79,9 +81,9 @@ if dataset in ['moons', 'digits']:
     with open(target, 'rb') as f:
         data = pickle.load(f)
     x, y = data['x'], data['y']
-    data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset) 
+    data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed) 
 elif dataset == 'mnist':
-    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset)
+    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
 
 model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, temperature_epochs=temperature_epochs, 
@@ -112,7 +114,7 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], color='white')
     plt.scatter(x0[:,0],x0[:,1], color='black')
 
-    plt.savefig('./data/contour_bayesian_plot', bbox_inches='tight')
+    plt.savefig('./data/bgssl_14', bbox_inches='tight')
 
 
 

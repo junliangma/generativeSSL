@@ -17,33 +17,37 @@ from models.DNN import DNN
 ### Script to run an experiment with fixed data as in ADGM paper ###
 
 ## argv[1] - model to use (gssl, bgssl, m2, dnn)
+## argv[2] - noise level to work with
 
-model_type = sys.argv[1]
-target = './data/moons_semi.pkl'
+
+model_type, noise = sys.argv[1], sys.argv[2]
+target = './data/moons_semi_' + noise + '.pkl'
 labeled_batchsize, unlabeled_batchsize = 6,100
 
 if model_type == 'gssl':
-    z_dim = 10
-    learning_rate = 3e-3
-    architecture = [100,100]
-    n_epochs = 50
+    z_dim = 5
+    learning_rate = (2e-4,500)
+    architecture = [128,128]
+    n_epochs = 250 
+    temperature_epochs = 75
+    start_temp = 0.8
     type_px = 'Gaussian'
     binarize = False
     logging = False
-    model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+    model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 
 
 if model_type == 'igssl':
-    z_dim = 10
-    learning_rate = 1e-4
+    z_dim = 2
+    learning_rate = 3e-3
     architecture = [100,100]
-    n_epochs = 250
+    n_epochs = 300
     type_px = 'Gaussian'
     binarize = False
     logging = False
     model = igssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 
 
 if model_type == 'bgssl':
@@ -77,30 +81,42 @@ x_l, y_l = data['x_labeled'], data['y_labeled']
 data = SSL_DATA(x,y, x_test=xtest, y_test=ytest, x_labeled=x_l, y_labeled=y_l, dataset='moons_adgm') 
 model.fit(data)
 
-xl,yl = data.data['x_l'], data.data['y_l']
-x1 = xl[np.where(yl[:,1]==1)]
-x0 = xl[np.where(yl[:,0]==1)]
 
-X,Y = np.mgrid[0:4.5:0.1, 0:4.5:0.1]
-xy = np.vstack((X.flatten(), Y.flatten())).T 
+
+
+### Plotting Results
+X,Y = np.mgrid[0.:4.0:0.1, 0.0:4:0.1]
+xy = np.vstack((X.flatten(), Y.flatten())).T
 predictions = model.predict_new(xy.astype('float32'))
 
 
-range_vals = np.arange(0.0,4.5,.1)
+range_vals = np.arange(0.0,4.0,.1)
 zi = np.zeros(X.shape)
 for i, row_val in enumerate(range_vals):
     for j, col_val in enumerate(range_vals):
         idx = np.intersect1d(np.where(np.isclose(xy[:,0],row_val))[0],np.where(np.isclose(xy[:,1],col_val))[0])
-        zi[i,j] = predictions[idx[0],0] * 100  
- 
+        zi[i,j] = predictions[idx[0],0] * 100
+
 plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
 
-plt.scatter(x1[:,0],x1[:,1], color='white')
-plt.scatter(x0[:,0],x0[:,1], color='black')
-plt.show()
-plt.savefig('../experiments/Moons/'+model_type+'_adgm', bbox_inches='tight')
+
+preds_test = model.predict_new(data.data['x_test'].astype('float32'))
+preds = np.argmax(preds_test, axis=1)
+x0, x1 = data.data['x_test'][np.where(preds==0)], data.data['x_test'][np.where(preds==1)]
+
+plt.scatter(x0[:,0], x0[:,1], color='g', s=1)
+plt.scatter(x1[:,0], x1[:,1], color='m', s=1)
+
+xl,yl = data.data['x_l'], data.data['y_l']
+plt.scatter(xl[:,0],xl[:,1], color='black')
+plt.savefig('../experiments/Moons/adgm_trial', bbox_inches='tight')
 
 
+plt.figure()
+x,y = model._sample_xy()
+y_bin = np.argmax(y, axis=1)
+x0, x1 = x[np.where(y_bin==0)], x[np.where(y_bin==1)]
 
-
-
+plt.scatter(x0[:,0],x0[:,1], s=1, color='r')
+plt.scatter(x1[:,0],x1[:,1], s=1, color='b')
+plt.savefig('../experiments/Moons/adgm_sample_trial', bbox_inches='tight')

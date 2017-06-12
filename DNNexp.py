@@ -25,15 +25,12 @@ def load_mnist(path='data/mnist.pkl.gz'):
 ## argv[2] - proportion of training data labeled
 ## argv[2] - dataset seed
 
-dataset = sys.argv[1]
+dataset, noise = sys.argv[1], sys.argv[4]
 labeled_proportion = float(sys.argv[2])
-if len(sys.argv)==4:
-    seed = int(sys.argv[3])
-else:
-    seed = None
+seed = int(sys.argv[3])
 
 if dataset == 'moons':
-    target = './data/moons.pkl'
+    target = './data/moons_'+noise+'.pkl'
     network = [100, 100]
     batchsize = 4
     n_epochs = 50
@@ -58,16 +55,12 @@ model.fit(Data)
 
 
 if dataset == 'moons':
-    xl,yl = Data.data['x_l'], Data.data['y_l']
-    x1 = xl[np.where(yl[:,1]==1)]
-    x0 = xl[np.where(yl[:,0]==1)]
-
-    X,Y = np.mgrid[-2:2.5:0.1, -2:2.5:0.1]
+    X,Y = np.mgrid[-2.5:3.0:0.1, -2.5:3.0:0.1]
     xy = np.vstack((X.flatten(), Y.flatten())).T
     predictions = model.predict_new(xy.astype('float32'))
 
 
-    range_vals = np.arange(-2.0,2.5,.1)
+    range_vals = np.arange(-2.5,3.0,.1)
     zi = np.zeros(X.shape)
     for i, row_val in enumerate(range_vals):
         for j, col_val in enumerate(range_vals):
@@ -76,7 +69,15 @@ if dataset == 'moons':
 
     plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
 
-    plt.scatter(x1[:,0],x1[:,1], color='white')
-    plt.scatter(x0[:,0],x0[:,1], color='black')
 
-    plt.savefig('../experiments/Moons/dnn_350', bbox_inches='tight')
+    preds_test = model.predict_new(Data.data['x_test'].astype('float32'))
+    preds = np.argmax(preds_test, axis=1)
+    x0, x1 = Data.data['x_test'][np.where(preds==0)], Data.data['x_test'][np.where(preds==1)]
+
+    plt.scatter(x0[:,0], x0[:,1], color='g', s=1)
+    plt.scatter(x1[:,0], x1[:,1], color='m', s=1)
+
+    xl,yl = Data.data['x_l'], Data.data['y_l']
+    plt.scatter(xl[:,0],xl[:,1], color='black')
+    plt.savefig('../experiments/Moons/dnn_trial', bbox_inches='tight')
+

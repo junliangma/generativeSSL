@@ -5,6 +5,8 @@ from collections import Counter
 from matplotlib import rc
 import pickle, gzip, cPickle, pdb, sys
 import numpy as np
+from sklearn.decomposition import PCA
+import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from models.VAE import VAE
 
@@ -23,26 +25,23 @@ def load_mnist(path='data/mnist.pkl.gz'):
 ### Script to run an experiment with standard VAE ###
 
 ## argv[1] - dataset to use (moons, digits, mnist)
-## argv[2] - proportion of training data labeled
-## argv[3] - Dataset seed
+## argv[2] - Dataset seed
+## argv[3] - noise level for data
 
 
-dataset = sys.argv[1]
-labeled_proportion = float(sys.argv[2])
-if len(sys.argv)==4:
-    seed = int(sys.argv[3])
-else:
-    seed = None
+dataset, noise = sys.argv[1], sys.argv[3]
+seed = int(sys.argv[2])
 
 
 if dataset == 'moons':
-    target = './data/moons.pkl'
-    batchsize = 512
-
-    z_dim = 10
-    learning_rate = 1e-3
-    architecture = [100,100]
-    n_epochs = 250
+    target = './data/moons_' + noise + '.pkl'
+    batchsize = 128
+    z_dim = 5 
+    learning_rate = (1e-3,)
+    architecture = [128,128]
+    n_epochs = 100
+    temperature_epochs = 1 
+    start_temp = 0.8
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -67,18 +66,36 @@ if dataset in ['moons', 'digits']:
     with open(target, 'rb') as f:
         data = pickle.load(f)
     x, y = data['x'], data['y']
-    data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
+    data = SSL_DATA(x,y, dataset=dataset, seed=seed)
 elif dataset == 'mnist':
-    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
+    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, dataset=dataset, seed=seed)
 
-model = VAE(LEARNING_RATE=learning_rate, Z_DIM=z_dim, NUM_HIDDEN=architecture, BATCH_SIZE=batchsize, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, BINARIZE=binarize)
+
+
+model = VAE(LEARNING_RATE=learning_rate, Z_DIM=z_dim, NUM_HIDDEN=architecture, BATCH_SIZE=batchsize, start_temp=start_temp, 
+	    NUM_EPOCHS=n_epochs, temperature_epochs=temperature_epochs, TYPE_PX=type_px, BINARIZE=binarize)
 model.fit(data)
 
 
 if dataset=='moons':
-    x = model._generate_data(int(1e4))
-    plt.scatter(x[:,0], x[:,1], s=1, color='gray')
+    f, (ax1, ax2) = plt.subplots(1, 2)
+    x, xm, xs = model._generate_data(int(1e4))
+    ax1.scatter(x[:,0], x[:,1], s=1, color='b')
+    ax1.set_title('Samples')
+    ax2.scatter(xm[:,0], xm[:,1], s=1, color='b')
+    ax2.set_title('Means')
     plt.savefig('../experiments/Moons/vae_sample', bbox_inches='tight')
+
+    x,y = data.data['x_test'], data.data['y_test']
+    x0,x1 = x[np.where(y[:,0]==1)], x[np.where(y[:,1]==1)]
+    z0, z1 = model.encode_new(x0.astype('float32')), model.encode_new(x1.astype('float32'))
+    z0, z1 = z0[0], z1[0]
+
+    plt.figure()
+    plt.scatter(z0[:,0], z0[:,1], color='r', s=1)
+    plt.scatter(z1[:,0], z1[:,1], color='b', s=1)
+    plt.savefig('../experiments/Moons/vae_encode', bbox_inches='tight')
+
 
 
 
