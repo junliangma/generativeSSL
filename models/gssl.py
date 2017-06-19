@@ -37,14 +37,17 @@ class gssl(model):
         
 	## define loss function
 	self._compute_loss_weights()
-        L_l = tf.reduce_sum(self._labeled_loss(self.x_labeled, self.labels))
-        L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
-        L_e = tf.reduce_sum(self._qxy_loss(self.x_labeled, self.labels))
-	weight_prior = self._weight_regularization() 
-        self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e , weight_prior], name='loss')
+        L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
+	L_u_all, EL_l, ent_qy = self._unlabeled_loss(self.x_unlabeled)
+	L_u = tf.reduce_mean(L_u_all)
+        #L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
+        L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
+	weight_prior = self._weight_regularization() / (self.LABELED_BATCH_SIZE+self.UNLABELED_BATCH_SIZE)
+        self.loss = -(L_l + L_u + self.alpha*L_e - 0.5 * weight_prior)
         
-        ## define optimizer
+        ## define optimizer 
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
+        gradients = tf.gradients(self.loss, tf.trainable_variables())
 	
 	## compute accuracies
 	self.train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
@@ -59,15 +62,28 @@ class gssl(model):
 	    saver = tf.train.Saver()
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+
+
+
             while epoch < self.NUM_EPOCHS:
-	 	self.beta = self.schedule[0]
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
+		
+		fd = {self.x_labeled:x_labeled, self.x_unlabeled:x_unlabeled, self.labels:labels}		
+		unlab_check, p1, p2 = sess.run([L_u, EL_l, ent_qy], fd)
+		if np.isnan(unlab_check):
+		    pdb.set_trace()
+
+		grads = sess.run(gradients, fd)
+		check_nan = sum([np.isnan(g).sum() for g in grads])
+		if check_nan > 0:
+		    pdb.set_trace()
             	_, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo], 
-            			     	     		    feed_dict={self.x_labeled: x_labeled, 
-		           		    	 		       self.labels: labels,
-		  	            		     		       self.x_unlabeled: x_unlabeled})
+            			     	     		                  feed_dict={self.x_labeled: x_labeled, 
+		           		    	 		           self.labels: labels,
+		  	            		     		           self.x_unlabeled: x_unlabeled,
+									   self.beta:self.schedule[epoch]})
 		if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=self.global_step)
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
@@ -75,6 +91,7 @@ class gssl(model):
                 if Data._epochs_unlabeled > epoch:
 		    fd = self._printing_feed_dict(Data, x_labeled, labels)
 		    acc_train, acc_test, summary_acc = sess.run([self.train_acc, self.test_acc, self.summary_op_acc], fd)
+			
         	    
 		    self._save_model(saver,sess,step,max_acc,acc_test)
 		    max_acc = acc_test if acc_test > max_acc else max_acc
@@ -145,7 +162,7 @@ class gssl(model):
 	h = tf.concat([x, y], axis=1)
 	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, mean + tf.exp(log_var) * eps
+	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
 
 
     def _labeled_loss(self, x, y):
@@ -153,10 +170,9 @@ class gssl(model):
 	q_mean, q_log_var, z = self._sample_Z(x, y, self.Z_SAMPLES)
 	l_px = self._compute_logpx(x, z)
 	l_py = self._compute_logpy(y, x, z)
-	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.ones_like(z))
-	l_qz = dgm._gauss_logp(z, q_mean, tf.exp(q_log_var))
-	klz = dgm._gauss_kl(q_mean, tf.exp(q_log_var))
-	#return l_px + self.beta * (l_py + l_pz - l_qz)
+	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.log(tf.ones_like(z)))
+	l_qz = dgm._gauss_logp(z, q_mean, q_log_var)
+	klz = dgm._gauss_kl(q_mean, q_log_var)
 	return l_px + l_py + self.beta * (l_pz - l_qz)
 
 
@@ -168,7 +184,7 @@ class gssl(model):
 	    y = self._generate_class(i, x.get_shape()[0])
 	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
 	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(1e-10 + weights)), axis=1)
-	return EL_l + ent_qy
+	return EL_l + ent_qy, EL_l, ent_qy
 
 
     def _qxy_loss(self, x, y):
