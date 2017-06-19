@@ -40,11 +40,11 @@ if dataset == 'moons':
     labeled_batchsize, unlabeled_batchsize = 4,128
     
     z_dim = 5
-    learning_rate = (1.5e-4, 250)
-    architecture = [100,100]
-    n_epochs = 150
+    learning_rate = (2e-4, 300)
+    architecture = [128,128]
+    n_epochs = 100
     temperature_epochs = 50
-    start_temp = 0.7
+    start_temp = 0.0
     type_px = 'Gaussian'
     binarize = False
     logging = False

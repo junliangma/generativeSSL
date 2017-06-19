@@ -40,7 +40,7 @@ if dataset == 'moons':
     labeled_batchsize, unlabeled_batchsize = 4,128
     
     z_dim = 5
-    learning_rate = (5e-4,)
+    learning_rate = (1e-3,200)
     architecture = [100,100]
     n_epochs = 150
     temperature_epochs = 50 

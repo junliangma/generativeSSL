@@ -47,19 +47,42 @@ def load_semi_supervised(noise=0.2):
 
     train_set, test_set, valid_set = _download(noise)
 
-    # Add 6 static labels.
-    train_x_l = np.zeros((6, 2))
-    train_t_l = np.array([0, 0, 0, 1, 1, 1])
-    # Top halfmoon
-    train_x_l[0] = [.7, 1.7]  # left
-    train_x_l[1] = [1.6, 2.6]  # middle
-    train_x_l[2] = [2.7, 1.7]  # right
+    if noise==0.2:
+        # Add 6 static labels.
+        train_x_l = np.zeros((6, 2))
+        train_t_l = np.array([0, 0, 0, 1, 1, 1])
+	# Top halfmoon
+        train_x_l[0] = [.7, 1.7]   # left
+        train_x_l[1] = [1.6, 2.6]  # middle
+        train_x_l[2] = [2.7, 1.7]  # right
 
-    # Bottom halfmoon
-    train_x_l[3] = [1.6, 2.0]  # left
-    train_x_l[4] = [2.7, 1.1]  # middle
-    train_x_l[5] = [3.5, 2.0]  # right
-    train_set_labeled = (train_x_l, train_t_l)
+        # Bottom halfmoon
+        train_x_l[3] = [1.6, 2.0]  # left
+        train_x_l[4] = [2.7, 1.1]  # middle
+        train_x_l[5] = [3.5, 2.0]  # right
+        train_set_labeled = (train_x_l, train_t_l)
+	
+    elif noise==0.1:
+        # Add 10 static labels.
+        train_x_l = np.zeros((6, 2))
+        train_t_l = np.array([0, 0, 0, 1, 1, 1])
+	# Top halfmoon
+        train_x_l[0] = [.3, 1.5]   # left-bottom
+        #train_x_l[1] = [.6, 2.]    # left-middle
+        train_x_l[1] = [1.25, 2.3]  # middle 
+        #train_x_l[2] = [1.9, 2.]    # right-middle
+        train_x_l[2] = [2.25, 1.5]  # right-bottom
+	
+
+        # Bottom halfmoon
+        train_x_l[3] = [1.3, 1.6]   # left-bottom
+        #train_x_l[5] = [1.55, 1.1]   # left-middle
+        train_x_l[4] = [2.25, .8]    # middle 
+        #train_x_l[6] = [3., 1.1]    # right-middle
+        train_x_l[5] = [3.25, 1.6]   # right-bottom
+        
+	train_set_labeled = (train_x_l, train_t_l)
+	
 
     train_set_labeled = pad_targets(train_set_labeled)
     train_set = pad_targets(train_set)

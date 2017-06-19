@@ -35,13 +35,13 @@ seed = int(sys.argv[2])
 
 if dataset == 'moons':
     target = './data/moons_' + noise + '.pkl'
-    batchsize = 128
-    z_dim = 5 
-    learning_rate = (1e-3,)
-    architecture = [128,128]
-    n_epochs = 100
-    temperature_epochs = 1 
-    start_temp = 0.8
+    batchsize = 4096 
+    z_dim = 5  
+    learning_rate = (3e-3, 200)
+    architecture = [128, 128]
+    n_epochs = 1000
+    temperature_epochs = 50 
+    start_temp = 0.0
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -78,14 +78,21 @@ model.fit(data)
 
 
 if dataset=='moons':
-    f, (ax1, ax2) = plt.subplots(1, 2)
-    x, xm, xs = model._generate_data(int(1e4))
-    ax1.scatter(x[:,0], x[:,1], s=1, color='b')
-    ax1.set_title('Samples')
-    ax2.scatter(xm[:,0], xm[:,1], s=1, color='b')
-    ax2.set_title('Means')
-    plt.savefig('../experiments/Moons/vae_sample', bbox_inches='tight')
+    #f, (ax1, ax2) = plt.subplots(1, 2)
+    x, xm, xs = model._generate_data(int(16384))
+    #ax1.scatter(x[:,0], x[:,1], s=1, color='b')
+    #ax1.set_title('Samples')
+    #ax2.scatter(xm[:,0], xm[:,1], s=1, color='b')
+    #ax2.set_title('Means')
+    plt.scatter(x[:,0], x[:,1], s=1, color='b')
+    plt.title('Samples')
+    plt.savefig('../experiments/Moons/vae_samples', bbox_inches='tight')
 
+    plt.figure()
+    plt.scatter(xm[:,0], xm[:,1], s=1, color='r')
+    plt.title('Means')
+    plt.savefig('../experiments/Moons/vae_mean', bbox_inches='tight')
+    
     x,y = data.data['x_test'], data.data['y_test']
     x0,x1 = x[np.where(y[:,0]==1)], x[np.where(y[:,1]==1)]
     z0, z1 = model.encode_new(x0.astype('float32')), model.encode_new(x1.astype('float32'))

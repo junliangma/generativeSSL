@@ -3,33 +3,25 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from collections import Counter
 from matplotlib import rc
-import sys, pdb, os, pickle
+import sys, pdb, os, pickle, gzip, cPickle
 import numpy as np
 from data.SSL_DATA import SSL_DATA
+from data.mnist import mnist
 from models.DNN import DNN
-
-def encode_onehot(labels):
-    n, d = labels.shape[0], np.max(labels)+1
-    return np.eye(d)[labels]
-
-def load_mnist(path='data/mnist.pkl.gz'):
-    with gzip.open(path, 'rb') as f:
-        train_set, _, test_set = cPickle.load(f)
-    x_train, y_train = train_set[0], encode_onehot(train_set[1])
-    x_test, y_test = test_set[0], encode_onehot(test_set[1])
-    return x_train, y_train, x_test, y_test
 
 ### Run experiments with standard DNN ###
 
 ## argv[1] - dataset to use (moons, digits, mnist)
-## argv[2] - proportion of training data labeled
-## argv[2] - dataset seed
+## argv[2] - proportion of training data labeled (number of labels for MNIST)
+## argv[3] - dataset seed
+## argv[4] - noise level to use (moons only)
 
-dataset, noise = sys.argv[1], sys.argv[4]
+dataset = sys.argv[1]
 labeled_proportion = float(sys.argv[2])
 seed = int(sys.argv[3])
 
 if dataset == 'moons':
+    noise = sys.argv[4]
     target = './data/moons_'+noise+'.pkl'
     network = [100, 100]
     batchsize = 4
@@ -43,13 +35,27 @@ elif dataset == 'digits':
     n_epochs = 50
     learning_rate = 1e-3
  
-with open(target, 'rb') as f:
-    data = pickle.load(f)
-x, y = data['x'], data['y']
+elif dataset == 'mnist':
+    target = './data/mnist.pkl.gz'
+    num_labeled = int(sys.argv[2])
+    data = mnist(target)
+    data.create_semisupervised(num_labeled)
+    batchsize = 512
+    network = [500, 500]
+    n_epochs = 500
+    learning_rate = 1e-3
 
 
+if dataset in ['moons', 'digits']:
+    with open(target, 'rb') as f:
+        data = pickle.load(f)
+    x, y = data['x'], data['y']
+    Data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, seed=seed)
+elif dataset == 'mnist':
+    Data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_labeled=data.x_labeled, y_labeled=data.y_labeled, 
+		    x_test=data.x_test, y_test=data.y_test, dataset=dataset, seed=seed)
 
-Data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, seed=seed) 
+
 model = DNN(ARCHITECTURE=network, BATCH_SIZE=batchsize, NUM_EPOCHS=n_epochs, LEARNING_RATE=learning_rate)
 model.fit(Data)
 

@@ -26,11 +26,11 @@ labeled_batchsize, unlabeled_batchsize = 6,100
 
 if model_type == 'gssl':
     z_dim = 5
-    learning_rate = (2e-4,500)
+    learning_rate = (1e-3,300)
     architecture = [128,128]
-    n_epochs = 250 
+    n_epochs = 150
     temperature_epochs = 75
-    start_temp = 0.8
+    start_temp = 0.0
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -51,12 +51,13 @@ if model_type == 'igssl':
 
 
 if model_type == 'bgssl':
-    z_dim = 10
-    learning_rate = 5e-4
-    architecture = [100,100]
-    n_epochs = 150
-    temperature_epochs = 50
-    initVar = -3.
+    z_dim = 5
+    learning_rate = (6e-4, 300)
+    architecture = [128,128]
+    n_epochs = 500 
+    temperature_epochs = 250 
+    start_temp = 0.0
+    initVar = -5.5
     type_px = 'Gaussian'
     binarize = False
     logging = False
@@ -67,7 +68,7 @@ if model_type == 'bgssl':
 
 if model_type == 'dnn':
     learning_rate = 1e-2
-    architecture = [100,100]
+    architecture = [128,128]
     batch_size = 6
     n_epochs = 200
     logging = False
@@ -85,20 +86,23 @@ model.fit(data)
 
 
 ### Plotting Results
-X,Y = np.mgrid[0.:4.0:0.1, 0.0:4:0.1]
+X,Y = np.mgrid[-.5:4.0:0.1, 0.0:3:0.1]
 xy = np.vstack((X.flatten(), Y.flatten())).T
+
+print('Starting plotting work')
 predictions = model.predict_new(xy.astype('float32'))
 
 
-range_vals = np.arange(0.0,4.0,.1)
+range_x = np.arange(-.5,4.0,.1)
+range_y = np.arange(.0,3.0,.1)
 zi = np.zeros(X.shape)
-for i, row_val in enumerate(range_vals):
-    for j, col_val in enumerate(range_vals):
+for i, row_val in enumerate(range_x):
+    for j, col_val in enumerate(range_y):
         idx = np.intersect1d(np.where(np.isclose(xy[:,0],row_val))[0],np.where(np.isclose(xy[:,1],col_val))[0])
         zi[i,j] = predictions[idx[0],0] * 100
 
 plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
-
+print('Done with heat map')
 
 preds_test = model.predict_new(data.data['x_test'].astype('float32'))
 preds = np.argmax(preds_test, axis=1)
@@ -111,12 +115,14 @@ xl,yl = data.data['x_l'], data.data['y_l']
 plt.scatter(xl[:,0],xl[:,1], color='black')
 plt.savefig('../experiments/Moons/adgm_trial', bbox_inches='tight')
 
+print('Done with test data')
 
-plt.figure()
-x,y = model._sample_xy()
-y_bin = np.argmax(y, axis=1)
-x0, x1 = x[np.where(y_bin==0)], x[np.where(y_bin==1)]
-
-plt.scatter(x0[:,0],x0[:,1], s=1, color='r')
-plt.scatter(x1[:,0],x1[:,1], s=1, color='b')
-plt.savefig('../experiments/Moons/adgm_sample_trial', bbox_inches='tight')
+if model_type!='dnn':
+    plt.figure()
+    x,y = model._sample_xy(int(1e4))
+    y_bin = np.argmax(y, axis=1)
+    x0, x1 = x[np.where(y_bin==0)], x[np.where(y_bin==1)]
+    
+    plt.scatter(x0[:,0],x0[:,1], s=1, color='r')
+    plt.scatter(x1[:,0],x1[:,1], s=1, color='b')
+    plt.savefig('../experiments/Moons/adgm_sample_trial', bbox_inches='tight')
