@@ -42,11 +42,11 @@ class M2(model):
         
         ## define loss function
 	self._compute_loss_weights()
-        L_l = tf.reduce_sum(self._labeled_loss(self.x_labeled, self.labels))
-        L_u = tf.reduce_sum(self._unlabeled_loss(self.x_unlabeled))
-        L_e = tf.reduce_sum(self._qxy_loss(self.x_labeled, self.labels))
-	weight_priors = self._weight_regularization()
-        self.loss = -tf.add_n([self.labeled_weight*L_l , self.unlabeled_weight*L_u , self.alpha*L_e, weight_priors], name='loss')
+        L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
+        L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
+        L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
+	weight_priors = self._weight_regularization() / (self.LABELED_BATCH_SIZE + self.UNLABELED_BATCH_SIZE)
+        self.loss = -(L_l + L_u + self.alpha*L_e - weight_priors)
 	
         ## define optimizer
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
@@ -66,13 +66,12 @@ class M2(model):
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
             while epoch < self.NUM_EPOCHS:
-		self.beta = self.schedule[0]
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
                 if self.BINARIZE == True:
                     x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
                 _, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo],
                                                             feed_dict={self.x_labeled: x_labeled,
-                                                                       self.labels: labels,
+                                                                       self.labels: labels, self.beta:self.schedule[epoch],
                                                                        self.x_unlabeled: x_unlabeled})          	
 
 		if self.LOGGING:
@@ -124,7 +123,7 @@ class M2(model):
             if self.TYPE_PX=='Gaussian':
                 mean, logvar = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
 		eps = tf.random_normal([n_samples, self.X_DIM], dtype=tf.float32)
-		x_ = mean + tf.exp(logvar) * eps
+		x_ = mean + tf.sqrt(tf.exp(logvar)) * eps
             else:
                 x_ = dgm._forward_pass_Bernoulli(z_, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
             x = session.run([x_])
@@ -137,7 +136,7 @@ class M2(model):
 	h = tf.concat([x, y], axis=1)
 	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, mean + tf.exp(log_var) * eps
+	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
 
 
     def _labeled_loss(self, x, y):
@@ -145,9 +144,9 @@ class M2(model):
 	z_mean, z_log_var, z  = self._sample_Z(x, y, self.Z_SAMPLES)
 	l_px = self._compute_logpx(x, z, y)
 	l_py = self._compute_logpy(y)       
-	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.ones_like(z))
-	l_qz = dgm._gauss_logp(z, z_mean, tf.exp(z_log_var))
-	KLz = dgm._gauss_kl(z_mean, tf.exp(z_log_var))
+	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.log(tf.ones_like(z)))
+	l_qz = dgm._gauss_logp(z, z_mean, z_log_var)
+	KLz = dgm._gauss_kl(z_mean, z_log_var)
 	return l_px + l_py + self.beta * (l_pz - l_qz)
 
     def _unlabeled_loss(self, x):
@@ -157,7 +156,7 @@ class M2(model):
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
 	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
-	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(weights)), axis=1)
+	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(weights+1e-10)), axis=1)
 	return tf.add(EL_l, ent_qy)
 
 
@@ -171,7 +170,7 @@ class M2(model):
 	h = tf.concat([z,y], axis=1)
 	if self.TYPE_PX == 'Gaussian':
 	    mean, log_var = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	    return dgm._gauss_logp(x, mean, tf.exp(log_var))
+	    return dgm._gauss_logp(x, mean, log_var)
 	elif self.TYPE_PX == 'Bernoulli':
 	    pi = dgm._forward_pass_Bernoulli(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
 	    return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi), (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)

@@ -43,10 +43,12 @@ class model(object):
         """ compute the likelihood of every element in x under p(x|z) """
         if self.TYPE_PX == 'Gaussian':
             mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-            return dgm._gauss_logp(x, mean, tf.exp(log_var))
+            return dgm._gauss_logp(x, mean, log_var)
         elif self.TYPE_PX == 'Bernoulli':
-            pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-            return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi),  (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)
+            #pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+            #return tf.reduce_sum(tf.add(x * tf.log(1e-7 + pi),  (1-x) * tf.log(1e-7 + 1 - pi)), axis=1)
+	    logits = dgm._forward_pass_Cat_logits(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+	    return -tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=x, logits=logits),axis=1)
 
 
     def _compute_logpy(self, y, x, z):
@@ -66,7 +68,7 @@ class model(object):
 
     def _set_schedule(self):
 	if not self.temp_epochs:
-	    self.schedule = np.ones((self.NUM_EPOCHS, 1)).astype('float32')
+	    self.schedule = np.ones((self.NUM_EPOCHS, )).astype('float32')
 	else:
 	    warmup = np.expand_dims(np.linspace(self.start_temp, 1.0, self.temp_epochs),1)
 	    plateau = np.ones((self.NUM_EPOCHS-self.temp_epochs,1))
@@ -138,7 +140,7 @@ class model(object):
                                                                             acc_train, acc_test))   
 
 
-    def _print_verbose1(self,epoch, fd,sess):
+    def _print_verbose1(self,epoch, fd, sess, avg_var=None):
 	zm_test, zlv_test, z_test = self._sample_Z(self.x_test,self.y_test,1)
 	zm_train, zlv_train, z_train = self._sample_Z(self.x_train,self.y_train,1)
 	lpx_test, lpx_train,klz_test,klz_train, acc_train, acc_test = sess.run([self._compute_logpx(self.x_test, z_test), 
@@ -146,7 +148,11 @@ class model(object):
                                                                   dgm._gauss_kl(zm_test, tf.exp(zlv_test)),
                                                                   dgm._gauss_kl(zm_train, tf.exp(zlv_train)),
                                                                   self.train_acc, self.test_acc], feed_dict=fd)
-	print('Epoch: {}, logpx: {:5.3f}, klz: {:5.3f}, Train: {:5.3f}, Test: {:5.3f}'.format(epoch, np.mean(lpx_train), np.mean(klz_train), acc_train, acc_test ))
+
+	if avg_var != None:
+	    print('Epoch: {}, logpx: {:5.3f}, klz: {:5.3f}, Train: {:5.3f}, Test: {:5.3f}, Variance: {:5.5f}'.format(epoch, np.mean(lpx_train), np.mean(klz_train), acc_train, acc_test, avg_var))
+	else:
+	    print('Epoch: {}, logpx: {:5.3f}, klz: {:5.3f}, Train: {:5.3f}, Test: {:5.3f}'.format(epoch, np.mean(lpx_train), np.mean(klz_train), acc_train, acc_test))
 
 
     def _save_model(self, saver, session, step, max_val, curr_val):

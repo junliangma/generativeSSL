@@ -35,7 +35,7 @@ class VAE(model):
 	# loss and statistics
 	elbo, logpx, KLz = self._compute_ELBO(self.x_batch)
 	weight_prior = self._weight_regularization()
-	self.loss = -elbo + weight_prior/self.TRAINING_SIZE
+	self.loss = -elbo + weight_prior/self.BATCH_SIZE
 	test_elbo, _, _ = self._compute_ELBO(self.x_test)
 	train_elbo, _, _ = self._compute_ELBO(self.x_train)
 	# define optimizer
@@ -57,12 +57,13 @@ class VAE(model):
     	        writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
 	    
     	    while epoch < self.NUM_EPOCHS:
-		self.beta = self.schedule[epoch]
-    	    	x_batch, _ = Data.next_batch_shuffle(self.BATCH_SIZE)
+    	    	x_batch, _ = Data.next_batch_regular(self.BATCH_SIZE)
 		if self.BINARIZE:
 		    x_batch = self._binarize(x)
-	        feed_dict = {self.x_batch:x_batch, self.x_train:Data.data['x_train'], self.x_test:Data.data['x_test']}
+	        feed_dict = {self.x_batch:x_batch, self.x_train:Data.data['x_train'], self.x_test:Data.data['x_test'], self.beta:self.schedule[epoch]}
     	    	_, loss_batch, px, kl, summary = sess.run([self.optimizer, self.loss, logpx, KLz, self.summary_op], feed_dict=feed_dict)
+		
+
 		if self.LOGGING:
 		    writer.add_summary(summary, global_step=step)
     	    	total_loss += loss_batch
@@ -73,7 +74,13 @@ class VAE(model):
 		    saver.save(sess, self.ckpt_dir, global_step=step)
 		    trainELBO, testELBO = sess.run([train_elbo, test_elbo], feed_dict=feed_dict)
     	    	    #print('Epoch: {}, Train ELBO: {:5.3f}, Test ELBO: {:5.3f}'.format(epoch, trainELBO, testELBO))
+		    #eb, lpx, kl = sess.run(self._compute_ELBO(self.x_batch), feed_dict)
+		    #eb1 = lpx - self.schedule[epoch] * kl
+    	    	    #print('Epoch: {}, Computed ELBO: {:5.3f}, Temperature ELBO: {:5.3f}, beta: {:5.3f}'.format(epoch, eb, eb1, self.schedule[epoch]))
     	    	    total_loss, step, epoch = 0.0, 0, epoch + 1
+		   
+
+
 	    
 	    if self.LOGGING:
       	        writer.close()
@@ -96,15 +103,15 @@ class VAE(model):
     	""" Sample from Z with reparamterization """
 	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], dtype=tf.float32)
-	return mean, log_var, mean + tf.exp(log_var) * eps 
+	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps 
 
     def _compute_ELBO(self, x):
     	z_mean, z_log_var, z = self._sample_Z(x)
-    	KLz = dgm._gauss_kl(z_mean, tf.exp(z_log_var))
-	l_qz = dgm._gauss_logp(z, z_mean, tf.exp(z_log_var))
+    	KLz = dgm._gauss_kl(z_mean, z_log_var)
+	l_qz = dgm._gauss_logp(z, z_mean, z_log_var)
 	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.ones_like(z)) 
     	l_px = self._compute_logpx(x, z)
-	total_elbo = l_px + self.beta * (l_pz - l_qz) 
+	total_elbo = l_px - self.beta * (KLz) 
         return tf.reduce_mean(total_elbo), tf.reduce_mean(l_px), tf.reduce_mean(KLz)
 
     def encode_new(self, x):
@@ -124,7 +131,7 @@ class VAE(model):
 	    z_ = np.random.normal(size=(n_samps, self.Z_DIM)).astype('float32')
 	    if self.TYPE_PX=='Gaussian':
                 xmean, xlogvar = self.decode(z_) 
-		xs = tf.exp(xlogvar)
+		xs = tf.sqrt(tf.exp(xlogvar))
 		eps = tf.random_normal([n_samps, self.X_DIM], dtype=tf.float32)
 		x_ = xmean + xs * eps
             else:

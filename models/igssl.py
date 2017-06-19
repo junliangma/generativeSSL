@@ -92,13 +92,12 @@ class igssl(model):
 	    # Joint training
 	    epoch, step = 0, 0
             while epoch < self.NUM_EPOCHS:
-		self.beta = self.schedule[epoch]
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
             	_, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo], 
             			     	     		    feed_dict={self.x_labeled: x_labeled, 
-		           		    	 		       self.labels: labels,
+		           		    	 		       self.labels: labels, self.beta: self.schedule[epoch],
 		  	            		     		       self.x_unlabeled: x_unlabeled})
             	if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=step)
@@ -182,7 +181,7 @@ class igssl(model):
 	""" Sample from Z with the reparamterization trick """
 	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY)
 	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, tf.add(mean, tf.multiply(tf.exp(log_var), eps))
+	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
 
 
     def _labeled_loss(self, x, y, z=None, q_mean=None, q_logvar=None):
@@ -191,7 +190,7 @@ class igssl(model):
 	    q_mean, q_logvar, z = self._sample_Z(x, self.Z_SAMPLES)
         logpx = self._compute_logpx(x, z)
 	logpy = self._compute_logpy(y, x, z)
-	klz = dgm._gauss_kl(q_mean, tf.exp(q_logvar))
+	klz = dgm._gauss_kl(q_mean, q_logvar)
 	return logpx + logpy - self.beta * klz
 
 
@@ -204,7 +203,7 @@ class igssl(model):
 	    y = self._generate_class(i, x.get_shape()[0])
 	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y, z, q_mean, q_log_var))
 	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(1e-10 + weights)), axis=1)
-	return tf.add(EL_l, ent_qy)
+	return EL_l + ent_qy
 
 
     def _qxy_loss(self, x, y):
@@ -222,14 +221,6 @@ class igssl(model):
         return tf.reduce_sum(total_elbo), tf.reduce_mean(l_px), tf.reduce_mean(KLz)
 
 
-    def _compute_loss_weights(self):
-    	""" Compute scaling weights for the loss function """
-        #self.labeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_LABELED, self.LABELED_BATCH_SIZE)), tf.float32)
-        #self.unlabeled_weight = tf.cast(tf.divide(self.TRAINING_SIZE, tf.multiply(self.NUM_UNLABELED, self.UNLABELED_BATCH_SIZE)), tf.float32)
-        self.labeled_weight = tf.cast(self.TRAINING_SIZE / self.LABELED_BATCH_SIZE, tf.float32)
-        self.unlabeled_weight = tf.cast(self.TRAINING_SIZE / self.UNLABELED_BATCH_SIZE, tf.float32)
-
-    
     def compute_acc(self, x, y):
 	y_ = self.predict(x)
 	return tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
@@ -251,12 +242,4 @@ class igssl(model):
 	y = np.zeros(shape=(num, self.NUM_CLASSES))
 	y[:,k] = 1
 	return tf.constant(y, dtype=tf.float32)
-
-
-    def _hook_loss(self, epoch, SKIP_STEP, total_loss, l_l, l_u, l_e, acc_train, acc_test):
-    	print("Epoch {}: Total:{:5.1f}, Labeled:{:5.1f}, unlabeled:{:5.1f}, " 
-              "Additional:{:5.1f}, Training: {:5.3f}, Test: {:5.3f}".format(epoch, 
-									    total_loss/SKIP_STEP,l_l/SKIP_STEP,
-									    l_u/SKIP_STEP,l_e/SKIP_STEP,
-									    acc_train, acc_test))
 
