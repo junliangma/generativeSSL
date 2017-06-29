@@ -23,7 +23,7 @@ class bgssl(model):
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, initVar=-5, start_temp=0.8, 
                  LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, temperature_epochs=None, BINARIZE=False, verbose=1, logging=False):
-    	## Step 1: define the placeholders for input and outputi
+    	## Step 1: define the placeholders for input and output
 
 	super(bgssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
 
@@ -35,11 +35,7 @@ class bgssl(model):
     
 
     def fit(self, Data):
-    	self._process_data(Data)
-    	
-	self._create_placeholders() 
-	self._set_schedule()
-        self._initialize_networks()
+    	self._data_init(Data)
         
         ## define loss function
 	self._compute_loss_weights()
@@ -155,10 +151,6 @@ class bgssl(model):
 	    y_ = dgm._forward_pass_Cat(h, w_, self.NUM_HIDDEN, self.NONLINEARITY)
             x,y = session.run([x_,y_])
         return x[0],y
- 
-
-
-
 
 
     def _sample_Z(self, x, y, n_samples):

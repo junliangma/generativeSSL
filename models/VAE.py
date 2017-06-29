@@ -26,12 +26,7 @@ class VAE(model):
                         
 
     def fit(self, Data):
-    	self._process_data(Data)
-	# Book keeping
-    	self._create_placeholders()
-	self._set_schedule()
-    	self._initialize_networks()
-    	
+    	self._data_init(Data)	
 	# loss and statistics
 	elbo, logpx, KLz = self._compute_ELBO(self.x_batch)
 	weight_prior = self._weight_regularization()
@@ -78,10 +73,6 @@ class VAE(model):
 		    #eb1 = lpx - self.schedule[epoch] * kl
     	    	    #print('Epoch: {}, Computed ELBO: {:5.3f}, Temperature ELBO: {:5.3f}, beta: {:5.3f}'.format(epoch, eb, eb1, self.schedule[epoch]))
     	    	    total_loss, step, epoch = 0.0, 0, epoch + 1
-		   
-
-
-	    
 	    if self.LOGGING:
       	        writer.close()
 

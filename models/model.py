@@ -35,9 +35,7 @@ class model(object):
 	    self.lr = LEARNING_RATE = LEARNING_RATE[0]
 	else:
 	    start_lr = LEARNING_RATE[0]
-	    self.lr = tf.train.exponential_decay(start_lr, self.global_step, LEARNING_RATE[1], 0.96) 
-
-    
+	    self.lr = tf.train.exponential_decay(start_lr, self.global_step, LEARNING_RATE[1], 0.96)     
 
     def _compute_logpx(self, x, z, y=None):
         """ compute the likelihood of every element in x under p(x|z) """
@@ -45,8 +43,6 @@ class model(object):
             mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
             return dgm._gauss_logp(x, mean, log_var)
         elif self.TYPE_PX == 'Bernoulli':
-            #pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
-            #return tf.reduce_sum(tf.add(x * tf.log(1e-7 + pi),  (1-x) * tf.log(1e-7 + 1 - pi)), axis=1)
 	    logits = dgm._forward_pass_Cat_logits(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
 	    return -tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=x, logits=logits),axis=1)
 
@@ -61,6 +57,13 @@ class model(object):
     def _weight_regularization(self):
 	weights = [V for V in tf.trainable_variables() if 'W' in V.name]
 	return np.sum([tf.nn.l2_loss(w) for w in weights])	
+
+
+    def _data_init(self, Data):
+	self._process_data(Data)
+	self._create_placeholders()
+	self._set_schedule()
+	self._initialize_networks()
 
 
     def _binarize(self, x):

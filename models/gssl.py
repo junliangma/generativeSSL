@@ -29,18 +29,12 @@ class gssl(model):
    	self.name = 'gssl'                                   # model name 
 
     def fit(self, Data):
-    	self._process_data(Data)
-    	
-	self._create_placeholders() 
-	self._set_schedule()
-        self._initialize_networks()
-        
+        self._data_init(Data)
+ 
 	## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
-	L_u_all, EL_l, ent_qy = self._unlabeled_loss(self.x_unlabeled)
-	L_u = tf.reduce_mean(L_u_all)
-        #L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
+        L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
         L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
 	weight_prior = self._weight_regularization() / (self.LABELED_BATCH_SIZE+self.UNLABELED_BATCH_SIZE)
         self.loss = -(L_l + L_u + self.alpha*L_e - 0.5 * weight_prior)
@@ -71,14 +65,6 @@ class gssl(model):
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
 		
 		fd = {self.x_labeled:x_labeled, self.x_unlabeled:x_unlabeled, self.labels:labels}		
-		unlab_check, p1, p2 = sess.run([L_u, EL_l, ent_qy], fd)
-		if np.isnan(unlab_check):
-		    pdb.set_trace()
-
-		grads = sess.run(gradients, fd)
-		check_nan = sum([np.isnan(g).sum() for g in grads])
-		if check_nan > 0:
-		    pdb.set_trace()
             	_, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo], 
             			     	     		                  feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		           self.labels: labels,
