@@ -3,6 +3,7 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from collections import Counter
 from matplotlib import rc
+from sklearn.metrics import log_loss
 import pickle, sys, pdb, gzip, cPickle
 import numpy as np
 import tensorflow as tf
@@ -26,10 +27,10 @@ labeled_batchsize, unlabeled_batchsize = 6,100
 
 if model_type == 'gssl':
     z_dim = 5
-    learning_rate = (1e-3,300)
+    learning_rate = (6e-4,)
     architecture = [128,128]
-    n_epochs = 150
-    temperature_epochs = 75
+    n_epochs = 100
+    temperature_epochs = 50
     start_temp = 0.0
     type_px = 'Gaussian'
     binarize = False
@@ -52,10 +53,10 @@ if model_type == 'igssl':
 
 if model_type == 'bgssl':
     z_dim = 5
-    learning_rate = (6e-4, 300)
+    learning_rate = (3e-4,1000)
     architecture = [128,128]
-    n_epochs = 500 
-    temperature_epochs = 250 
+    n_epochs = 15 
+    temperature_epochs = 10
     start_temp = 0.0
     initVar = -5.5
     type_px = 'Gaussian'
@@ -86,15 +87,15 @@ model.fit(data)
 
 
 ### Plotting Results
-X,Y = np.mgrid[-.5:4.0:0.1, 0.0:3:0.1]
+range_x = np.arange(-2.5,3.5,.1)
+range_y = np.arange(-2.,2.5,.1)
+X,Y = np.mgrid[-2.5:3.5:.1, -2.:2.5:.1]
 xy = np.vstack((X.flatten(), Y.flatten())).T
 
 print('Starting plotting work')
 predictions = model.predict_new(xy.astype('float32'))
 
 
-range_x = np.arange(-.5,4.0,.1)
-range_y = np.arange(.0,3.0,.1)
 zi = np.zeros(X.shape)
 for i, row_val in enumerate(range_x):
     for j, col_val in enumerate(range_y):
@@ -105,6 +106,9 @@ plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
 print('Done with heat map')
 
 preds_test = model.predict_new(data.data['x_test'].astype('float32'))
+ll_test = -log_loss(data.data['y_test'], preds_test)
+print('Final Test Log Likelihood: {:5.3f}'.format(ll_test))
+ 
 preds = np.argmax(preds_test, axis=1)
 x0, x1 = data.data['x_test'][np.where(preds==0)], data.data['x_test'][np.where(preds==1)]
 

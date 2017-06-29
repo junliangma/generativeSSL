@@ -29,9 +29,9 @@ def _download(noise):
     test_x, test_t = make_moons(n_samples=10000, shuffle=True, noise=noise, random_state=1234)
     valid_x, valid_t = make_moons(n_samples=10000, shuffle=True, noise=noise, random_state=1234)
 
-    train_x += np.abs(train_x.min())
-    test_x += np.abs(test_x.min())
-    valid_x += np.abs(valid_x.min())
+    #train_x += np.abs(train_x.min())
+    #test_x += np.abs(test_x.min())
+    #valid_x += np.abs(valid_x.min())
 
     train_set = (train_x, train_t)
     test_set = (test_x, test_t)
@@ -63,23 +63,29 @@ def load_semi_supervised(noise=0.2):
         train_set_labeled = (train_x_l, train_t_l)
 	
     elif noise==0.1:
-        # Add 10 static labels.
+        # Add static labels.
         train_x_l = np.zeros((6, 2))
         train_t_l = np.array([0, 0, 0, 1, 1, 1])
-	# Top halfmoon
-        train_x_l[0] = [.3, 1.5]   # left-bottom
-        #train_x_l[1] = [.6, 2.]    # left-middle
-        train_x_l[1] = [1.25, 2.3]  # middle 
-        #train_x_l[2] = [1.9, 2.]    # right-middle
-        train_x_l[2] = [2.25, 1.5]  # right-bottom
-	
 
+	## Top halfmoon
+        #train_x_l[0] = [.35, 1.5]   # left-bottom
+        #train_x_l[1] = [1.35, 2.3]  # middle 
+        #train_x_l[2] = [2.3, 1.5]  # right-bottom
+	#
+        ## Bottom halfmoon
+        #train_x_l[3] = [1.35, 1.5]   # left-bottom
+        #train_x_l[4] = [2.3, .8]    # middle 
+        #train_x_l[5] = [3.25, 1.5]   # right-bottom
+
+	# Top halfmoon
+        train_x_l[0] = [-.95, .05]    # left-bottom
+        train_x_l[1] = [.04, 1.]      # middle 
+        train_x_l[2] = [.98, .05]     # right-bottom
+	
         # Bottom halfmoon
-        train_x_l[3] = [1.3, 1.6]   # left-bottom
-        #train_x_l[5] = [1.55, 1.1]   # left-middle
-        train_x_l[4] = [2.25, .8]    # middle 
-        #train_x_l[6] = [3., 1.1]    # right-middle
-        train_x_l[5] = [3.25, 1.6]   # right-bottom
+        train_x_l[3] = [.04, .4]    # left-bottom
+        train_x_l[4] = [.98, -.5]    # middle 
+        train_x_l[5] = [1.95,.4]    # right-bottom
         
 	train_set_labeled = (train_x_l, train_t_l)
 	

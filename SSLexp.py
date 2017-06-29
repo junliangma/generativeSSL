@@ -60,9 +60,9 @@ elif dataset == 'mnist':
     data.create_semisupervised(num_labeled)    
 
     z_dim = 50
-    learning_rate = (5e-4,)
+    learning_rate = (3e-4,)
     architecture = [500, 500]
-    n_epochs = 5000
+    n_epochs = 1500
     type_px = 'Bernoulli'
     temperature_epochs = 10
     start_temp = 0.0
