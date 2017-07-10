@@ -18,9 +18,9 @@ from tensorflow.contrib.tensorboard.plugins import projector
 class gssl(model):
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=0.5, 
-                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
+                 BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
     	
-	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
+	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
 
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
@@ -30,7 +30,7 @@ class gssl(model):
 
     def fit(self, Data):
         self._data_init(Data)
- 
+        
 	## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
@@ -58,18 +58,17 @@ class gssl(model):
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
 
 
-
             while epoch < self.NUM_EPOCHS:
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
 		
-		fd = {self.x_labeled:x_labeled, self.x_unlabeled:x_unlabeled, self.labels:labels}		
             	_, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo], 
             			     	     		                  feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		           self.labels: labels,
 		  	            		     		           self.x_unlabeled: x_unlabeled,
-									   self.beta:self.schedule[epoch]})
+									   self.beta:self.schedule[epoch],
+									   self.phase:True})
 		if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=self.global_step)
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
@@ -115,14 +114,14 @@ class gssl(model):
 
 
     def predict(self, x, n_iters=100):
-	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	yq = y_
 	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	y_samps = tf.expand_dims(y_, axis=2)
 	for i in range(n_iters):
 	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
 	    h = tf.concat([x, z], axis=1)
-	    y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	    y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
 	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	return tf.reduce_mean(y_samps, axis=2), yq
@@ -135,18 +134,18 @@ class gssl(model):
             saver.restore(session, ckpt.model_checkpoint_path)
             z_ = np.random.normal(size=(n_samples, self.Z_DIM)).astype('float32')
             if self.TYPE_PX=='Gaussian':
-                x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+                x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             else:
-            	x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+            	x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             h = tf.concat([x_[0],z_], axis=1)
-            y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+            y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, False)
             x,y = session.run([x_,y_])
         return x[0],y
 
     def _sample_Z(self, x, y, n_samples):
 	""" Sample from Z with the reparamterization trick """
 	h = tf.concat([x, y], axis=1)
-	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
+	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
 	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
 
@@ -164,7 +163,7 @@ class gssl(model):
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
-	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
@@ -174,14 +173,14 @@ class gssl(model):
 
 
     def _qxy_loss(self, x, y):
-	y_ = dgm._forward_pass_Cat_logits(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	y_ = dgm._forward_pass_Cat_logits(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
 
     def _compute_logpy(self, y, x, z):
 	""" compute the likelihood of every element in y under p(y|x,z) """
 	h = tf.concat([x,z], axis=1)
-	y_ = dgm._forward_pass_Cat_logits(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	y_ = dgm._forward_pass_Cat_logits(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
 
@@ -195,12 +194,12 @@ class gssl(model):
     def _initialize_networks(self):
     	""" Initialize all model networks """
 	if self.TYPE_PX == 'Gaussian':
-      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
+      	    self.Pz_x = dgm._init_Gauss_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_', self.batchnorm)
 	elif self.TYPE_PX == 'Bernoulli':
-	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_')
-    	self.Pzx_y = dgm._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Pzx_y_')
-    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z_')
-    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y_')
+	    self.Pz_x = dgm._init_Cat_net(self.Z_DIM, self.NUM_HIDDEN, self.X_DIM, 'Pz_x_', self.batchnorm)
+    	self.Pzx_y = dgm._init_Cat_net(self.Z_DIM+self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Pzx_y_', self.batchnorm)
+    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z_', self.batchnorm)
+    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y_', self.batchnorm)
 
     
 

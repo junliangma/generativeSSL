@@ -14,20 +14,23 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 class model(object):
 
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=None,  NUM_EPOCHS=75, Z_SAMPLE=1, BINARIZE=False, logging=False, alpha=0.1):
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, batch_norm=False, temperature_epochs=None, 
+		start_temp=None,  NUM_EPOCHS=75, Z_SAMPLE=1, BINARIZE=False, logging=False, alpha=0.1, ckpt=None):
 
 	self.Z_DIM = Z_DIM                       # number of labeled dimensions
 	self.NUM_HIDDEN = NUM_HIDDEN             # network architectures
 	self.NONLINEARITY = NONLINEARITY         # activation function
 	self.TYPE_PX = TYPE_PX                   # likelihood for inputs
+	self.batchnorm = batch_norm              # use batch normalization
 	self.temp_epochs = temperature_epochs    # length of warmup period
 	self.start_temp = start_temp             # starting temperature for KL divergence
-	self.NUM_EPOCHS = NUM_EPOCHS             # Number of training epochs
+	self.NUM_EPOCHS = NUM_EPOCHS             # Number oftraining epochs
 	self.Z_SAMPLES = Z_SAMPLE                # MC estimation with Z
 	self.BINARIZE = BINARIZE                 # binarize the data
 	self.LOGGING = False                     # log with tensorboard
 	self.alpha = alpha                       # temporary
 	self.name = 'model'                      # model name
+	self.ckpt = ckpt 			 # preallocated checkpoint dir
 
 	# Set learning rate
 	self.global_step = tf.Variable(0, trainable=False, name='global_step')
@@ -40,17 +43,17 @@ class model(object):
     def _compute_logpx(self, x, z, y=None):
         """ compute the likelihood of every element in x under p(x|z) """
         if self.TYPE_PX == 'Gaussian':
-            mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+            mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             return dgm._gauss_logp(x, mean, log_var)
         elif self.TYPE_PX == 'Bernoulli':
-	    logits = dgm._forward_pass_Cat_logits(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY)
+	    logits = dgm._forward_pass_Cat_logits(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    return -tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=x, logits=logits),axis=1)
 
 
     def _compute_logpy(self, y, x, z):
         """ compute the likelihood of every element in y under p(y|x,z) """
         h = tf.concat([x,z], axis=1)
-        y_ = dgm._forward_pass_Cat_logits(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+        y_ = dgm._forward_pass_Cat_logits(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
         return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
 
@@ -64,7 +67,6 @@ class model(object):
 	self._create_placeholders()
 	self._set_schedule()
 	self._initialize_networks()
-
 
     def _binarize(self, x):
 	return np.random.binomial(1,x)
@@ -112,6 +114,7 @@ class model(object):
         self.y_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.NUM_CLASSES], name='y_train')
         self.x_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.X_DIM], name='x_test')
         self.y_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.NUM_CLASSES], name='y_test')
+	self.phase = tf.placeholder(tf.bool, name='phase')
 
 
     def _create_summaries(self, L_l, L_u, L_e):
@@ -133,7 +136,7 @@ class model(object):
     def _printing_feed_dict(self, Data, x, y):
 	return {self.x_train:Data.data['x_train'], self.y_train:Data.data['y_train'],
                 self.x_test:Data.data['x_test'], self.y_test:Data.data['y_test'],
-                self.x_labeled:x, self.labels:y}
+                self.x_labeled:x, self.labels:y, self.phase:False}
 
     def _print_verbose0(self, epoch, step, total_loss, l_l, l_u, l_e, acc_train, acc_test):
         print("Epoch {}: Total:{:5.1f}, Labeled:{:5.1f}, unlabeled:{:5.1f}, "
@@ -144,7 +147,7 @@ class model(object):
 
 
     def _print_verbose1(self,epoch, fd, sess, avg_var=None):
-	zm_test, zlv_test, z_test = self._sample_Z(self.x_test,self.y_test,1)
+	zm_test, zlv_test, z_test = self._sample_Z(self.x_test,self.y_test,1 )
 	zm_train, zlv_train, z_train = self._sample_Z(self.x_train,self.y_train,1)
 	lpx_test, lpx_train,klz_test,klz_train, acc_train, acc_test = sess.run([self._compute_logpx(self.x_test, z_test), 
                                                                   self._compute_logpx(self.x_train, z_train),
@@ -163,10 +166,15 @@ class model(object):
 	if curr_val > max_val:
 	    saver.save(session, self.ckpt_best, global_step=step+1)
 
+
     def _allocate_directory(self):
         self.LOGDIR = 'graphs/'+self.name+'-' +self.data_name+'-'+str(self.NUM_LABELED)+'/'
-        self.ckpt_dir = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '/'
-        self.ckpt_best = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '-best/'
+	if self.ckpt == None:
+            self.ckpt_dir = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '/'
+            self.ckpt_best = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '-best/'
+	else: 
+	    self.ckpt_dir = './ckpt/' + self.ckpt + '/'
+	    self.ckpt_best = './ckpt/' + self.ckpt + '-best/'
         if not os.path.isdir(self.ckpt_dir):
             os.mkdir(self.ckpt_dir)
         if not os.path.isdir(self.ckpt_best):
