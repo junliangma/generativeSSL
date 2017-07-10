@@ -46,7 +46,7 @@ class M2(model):
         L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
         L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
 	weight_priors = self._weight_regularization() / (self.LABELED_BATCH_SIZE + self.UNLABELED_BATCH_SIZE)
-        self.loss = -(L_l + L_u + self.alpha*L_e - weight_priors)
+        self.loss = -(L_l + L_u + self.alpha * L_e - 0.8 * weight_priors)
 	
         ## define optimizer
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
@@ -73,7 +73,6 @@ class M2(model):
                                                             feed_dict={self.x_labeled: x_labeled,
                                                                        self.labels: labels, self.beta:self.schedule[epoch],
                                                                        self.x_unlabeled: x_unlabeled})          	
-
 		if self.LOGGING:
 		    writer.add_summary(summary_elbo, global_step=self.global_step)
                 total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
@@ -172,8 +171,8 @@ class M2(model):
 	    mean, log_var = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
 	    return dgm._gauss_logp(x, mean, log_var)
 	elif self.TYPE_PX == 'Bernoulli':
-	    pi = dgm._forward_pass_Bernoulli(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
-	    return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi), (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)
+	    logits = dgm._forward_pass_Cat_logits(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
+	    return -tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=x, logits=logits), axis=1)
 
 
     def _compute_logpy(self, y, x=None, z=None):
