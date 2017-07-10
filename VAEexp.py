@@ -37,10 +37,10 @@ if dataset == 'moons':
     target = './data/moons_' + noise + '.pkl'
     batchsize = 4096 
     z_dim = 5  
-    learning_rate = (3e-3, 200)
+    learning_rate = (3e-3, 500)
     architecture = [128, 128]
     n_epochs = 1000
-    temperature_epochs = 50 
+    temperature_epochs = 150 
     start_temp = 0.0
     type_px = 'Gaussian'
     binarize = False

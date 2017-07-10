@@ -12,7 +12,7 @@ from models.gssl import gssl
 from models.igssl import igssl
 from models.bgssl import bgssl
 from models.DNN import DNN 
-
+from models.kingmaM2 import M2 as m2
 
 
 ### Script to run an experiment with fixed data as in ADGM paper ###
@@ -29,14 +29,15 @@ if model_type == 'gssl':
     z_dim = 5
     learning_rate = (6e-4,)
     architecture = [128,128]
-    n_epochs = 100
-    temperature_epochs = 50
+    n_epochs = 25
+    temperature_epochs = 5
     start_temp = 0.0
     type_px = 'Gaussian'
+    batchnorm = True
     binarize = False
     logging = False
-    model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+    model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, BATCHNORM=batchnorm, temperature_epochs=temperature_epochs, 
+		start_temp=start_temp, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 
 
 if model_type == 'igssl':
@@ -55,17 +56,32 @@ if model_type == 'bgssl':
     z_dim = 5
     learning_rate = (3e-4,1000)
     architecture = [128,128]
-    n_epochs = 15 
-    temperature_epochs = 10
+    n_epochs = 750 
+    temperature_epochs = 250
     start_temp = 0.0
     initVar = -5.5
     type_px = 'Gaussian'
+    batchnorm = False 
     binarize = False
     logging = False
-    model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
+    model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, BATCHNORM=batchnorm,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, 
                 temperature_epochs=temperature_epochs, initVar=initVar, TYPE_PX=type_px, logging=logging)
 
+
+if model_type == 'm2':
+    z_dim = 5
+    learning_rate = (5e-4,) 
+    architecture = [128, 128]
+    n_epochs = 150
+    temperature_epochs = 500
+    start_temp = 0.0
+    type_px = 'Gaussian' 
+    verbose = 1
+    binarize, logging = False, False
+    
+    model = m2(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
+                LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 
 if model_type == 'dnn':
     learning_rate = 1e-2
@@ -87,9 +103,9 @@ model.fit(data)
 
 
 ### Plotting Results
-range_x = np.arange(-2.5,3.5,.1)
-range_y = np.arange(-2.,2.5,.1)
-X,Y = np.mgrid[-2.5:3.5:.1, -2.:2.5:.1]
+range_x = np.arange(-1.5,2.5,.1)
+range_y = np.arange(-1.,1.5,.1)
+X,Y = np.mgrid[-1.5:2.5:.1, -1.:1.5:.1]
 xy = np.vstack((X.flatten(), Y.flatten())).T
 
 print('Starting plotting work')

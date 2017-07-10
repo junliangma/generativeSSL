@@ -85,7 +85,6 @@ if dataset in ['moons', 'digits']:
 elif dataset == 'mnist':
     data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
 
-
 model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=0, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 model.fit(data)
@@ -100,9 +99,4 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], s=1, color='b')
  
     plt.savefig('../experiments/Moons/gssl_sample', bbox_inches='tight')
-
-
-
-
-
 
