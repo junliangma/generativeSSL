@@ -180,3 +180,38 @@ class model(object):
         if not os.path.isdir(self.ckpt_best):
             os.mkdir(self.ckpt_best)
 
+
+
+########## ACQUISTION FUNCTIONS ###########
+
+    def _acquisition_new(self, x, acq_func):
+        if acq_func == 'predictive_entropy':
+            acquisition = self._predictive_entropy(x)
+        elif acq_func == 'bald':
+            acquisition = self._bald(x)
+        elif acq_func == 'var_ratios':
+            acquisition = self._variational_ratios(x)
+        saver = tf.train.Saver()
+        with tf.Session() as session:
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            saver.restore(session, ckpt.model_checkpoint_path)
+            acq = session.run(acquisition)
+        return acq, np.argmax(acq)
+
+
+    def _predictive_entropy(self, x):
+        predictions = self.predict(x)
+        return -tf.reduce_sum(predictions[0] * tf.log(1e-10+predictions[0]),axis=1)
+
+
+    def _variational_ratios(self, x):
+        predictions = self.predict(x)
+        return 1 - tf.reduce_max(predictions[0], axis=1)
+
+
+
+###########################################
+
+
+
+

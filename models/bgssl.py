@@ -116,16 +116,16 @@ class bgssl(model):
 
 
     def predict(self, x, n_w=10, n_iters=20):
-	w_ = self._sample_W()
-	y_, yq = self._predict_condition_W(x, w_, n_iters)
+	self._sample_W()
+	y_, yq = self._predict_condition_W(x, n_iters)
 	y_ = tf.expand_dims(y_, axis=2)
 	for i in range(n_w-1):
-   	    w_ = self._sample_W()
-            y_new, _ = self._predict_condition_W(x, w_, n_iters) 
+   	    self._sample_W()
+            y_new, _ = self._predict_condition_W(x, n_iters) 
 	    y_ = tf.concat([y_, tf.expand_dims(y_new, axis=2)], axis=2)
         return tf.reduce_mean(y_, axis=2), yq
 
-    def _predict_condition_W(self, x, w, n_iters=20):
+    def _predict_condition_W(self, x, n_iters=20):
 	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	yq = y_
 	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
@@ -133,18 +133,18 @@ class bgssl(model):
 	for i in range(n_iters):
 	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
 	    h = tf.concat([x, z], axis=1)
-	    y_ = dgm._forward_pass_Cat(h, w, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
 	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	return tf.reduce_mean(y_samps, axis=2), yq
 
     def sample_y(self, x, n_w=10, n_iters=20):
-	w_ = self._sample_W()
-	y_, yq = self._predict_condition_W(x, w_, n_iters)
+	self._sample_W()
+	y_, yq = self._predict_condition_W(x, n_iters)
 	y_ = tf.expand_dims(y_, axis=2)
 	for i in range(n_w-1):
-   	    w_ = self._sample_W()
-            y_new, _ = self._predict_condition_W(x, w_, n_iters) 
+   	    self._sample_W()
+            y_new, _ = self._predict_condition_W(x, n_iters) 
 	    y_ = tf.concat([y_, tf.expand_dims(y_new, axis=2)], axis=2)
         return y_
 
@@ -166,8 +166,8 @@ class bgssl(model):
             else:
                 x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             h = tf.concat([x_[0],z_], axis=1)
-	    w_ = self._sample_W()
-	    y_ = dgm._forward_pass_Cat(h, w_, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    self._sample_W()
+	    y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])
         return x[0],y
 
@@ -182,39 +182,20 @@ class bgssl(model):
 
     def _sample_W(self):
 	""" Sample from W with the reparamterization trick """
-	weights = {}
 	for i in range(len(self.NUM_HIDDEN)):
 	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
 	    mean_W, mean_b = self.Pzx_y['W'+str(i)+'_mean'], self.Pzx_y['b'+str(i)+'_mean']
             logvar_W, logvar_b = self.Pzx_y['W'+str(i)+'_logvar'], self.Pzx_y['b'+str(i)+'_logvar']
 	    eps_W = tf.random_normal(mean_W.get_shape(), dtype=tf.float32)
 	    eps_b = tf.random_normal(mean_b.get_shape(), dtype=tf.float32)
-	    weights[weight_name] = mean_W + tf.sqrt(tf.exp(logvar_W)) * eps_W
-	    weights[bias_name] = mean_b + tf.sqrt(tf.exp(logvar_b)) * eps_b
+	    self.Wtilde[weight_name] = mean_W + tf.sqrt(tf.exp(logvar_W)) * eps_W
+	    self.Wtilde[bias_name] = mean_b + tf.sqrt(tf.exp(logvar_b)) * eps_b
 	mean_W, logvar_W = self.Pzx_y['Wout_mean'], self.Pzx_y['Wout_logvar']
 	mean_b, logvar_b = self.Pzx_y['bout_mean'], self.Pzx_y['bout_logvar']
 	eps_W = tf.random_normal(mean_W.get_shape(), dtype=tf.float32)
 	eps_b = tf.random_normal(mean_b.get_shape(), dtype=tf.float32)
-	weights['Wout'] = mean_W + tf.sqrt(tf.exp(logvar_W)) * eps_W
-	weights['bout'] = mean_b + tf.sqrt(tf.exp(logvar_b)) * eps_b
-	return weights
-
-    def _assign_W(self):
-	""" Sample from W with the reparamterization trick """
-	for i in range(len(self.NUM_HIDDEN)):
-	    weight_name, bias_name = 'W'+str(i), 'b'+str(i)
-	    mean_W, mean_b = self.Pzx_y['W'+str(i)+'_mean'], self.Pzx_y['b'+str(i)+'_mean']
-            logvar_W, logvar_b = self.Pzx_y['W'+str(i)+'_logvar'], self.Pzx_y['b'+str(i)+'_logvar']
-	    eps_W = tf.random_normal(mean_W.get_shape(), dtype=tf.float32)
-	    eps_b = tf.random_normal(mean_b.get_shape(), dtype=tf.float32)
-	    tf.assign(self.Wtilde[weight_name], mean_W + tf.sqrt(tf.exp(logvar_W)) * eps_W)
-	    tf.assign(self.Wtilde[bias_name], mean_b + tf.sqrt(tf.exp(logvar_b)) * eps_b)
-	mean_W, logvar_W = self.Pzx_y['Wout_mean'], self.Pzx_y['Wout_logvar']
-	mean_b, logvar_b = self.Pzx_y['bout_mean'], self.Pzx_y['bout_logvar']
-	eps_W = tf.random_normal(mean_W.get_shape(), dtype=tf.float32)
-	eps_b = tf.random_normal(mean_b.get_shape(), dtype=tf.float32)
-	tf.assign(self.Wtilde['Wout'], mean_W + tf.sqrt(tf.exp(logvar_W)) * eps_W)
-	tf.assign(self.Wtilde['bout'], mean_b + tf.sqrt(tf.exp(logvar_b)) * eps_b)
+	self.Wtilde['Wout'] = mean_W + tf.sqrt(tf.exp(logvar_W)) * eps_W
+	self.Wtilde['bout'] = mean_b + tf.sqrt(tf.exp(logvar_b)) * eps_b
 
 
 ###########################################
@@ -223,12 +204,12 @@ class bgssl(model):
 
 ########### LOSS COMPUTATIONS #############
 
-    def _labeled_loss_W(self, x, y, w):
+    def _labeled_loss_W(self, x, y):
 	""" Compute necessary terms for labeled loss (per data point) """
 	d = tf.cast(self.TRAINING_SIZE, tf.float32)
 	q_mean, q_logvar, z = self._sample_Z(x, y, self.Z_SAMPLES)
 	l_px = self._compute_logpx(x, z)
-	l_py = self._compute_logpy(y, x, z, w)
+	l_py = self._compute_logpy(y, x, z)
 	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.log(tf.ones_like(z)))
 	l_qz = dgm._gauss_logp(z, q_mean, q_logvar)
 	klz = dgm._gauss_kl(q_mean, q_logvar)
@@ -237,18 +218,18 @@ class bgssl(model):
 
 
     def _labeled_loss(self, x, y):
-	w_ = self._sample_W()
-	return self._labeled_loss_W(x,y,w_)
+	self._sample_W()
+	return self._labeled_loss_W(x,y)
 
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
 	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	w_ = self._sample_W()
+	self._sample_W()
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
-	    EL_l += tf.multiply(weights[:,i], self._labeled_loss_W(x,y,w_))
+	    EL_l += tf.multiply(weights[:,i], self._labeled_loss_W(x,y))
 	ent_qy = -tf.reduce_sum(weights * tf.log(1e-10 + weights), axis=1)
 	return EL_l + ent_qy
 
@@ -276,10 +257,10 @@ class bgssl(model):
 	    return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi),  (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)
 
 
-    def _compute_logpy(self, y, x, z, w):
+    def _compute_logpy(self, y, x, z):
 	""" compute the likelihood of every element in y under p(y|x,z, w) with sampled w"""
 	h = tf.concat([x,z], axis=1)
-	y_ = dgm._forward_pass_Cat_logits(h, w, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	y_ = dgm._forward_pass_Cat_logits(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
     def _kl_W(self):
@@ -343,59 +324,24 @@ class bgssl(model):
     def _init_Wtilde(self, n_in, architecture, n_out, vname, bn=False):
         """ Initialize the weights of a network with batch normalization parameterizeing a Categorical distribution """
         weights = {}
-        for i, neurons in enumerate(architecture):
-            weight_name, bias_name = 'W'+str(i), 'b'+str(i)
-            if i == 0:
-                weights[weight_name] = tf.Variable(tf.zeros([n_in, architecture[i]]), name=vname+weight_name, trainable=False)
-            else:
-                weights[weight_name] = tf.Variable(tf.zeros([architecture[i-1], architecture[i]]), name=vname+weight_name, trainable=False)
-            weights[bias_name] = tf.Variable(tf.zeros(architecture[i]) + 1e-1, name=vname+bias_name, trainable=False)
-            if bn:
+        if bn:
+            for i, neurons in enumerate(architecture):
                 scale, beta, mean, var = 'scale'+str(i), 'beta'+str(i), 'mean'+str(i), 'var'+str(i)
                 weights[scale] = tf.Variable(tf.ones(architecture[i]), name=vname+scale)
                 weights[beta] = tf.Variable(tf.zeros(architecture[i]), name=vname+beta)
                 weights[mean] = tf.Variable(tf.zeros(architecture[i]), name=vname+mean, trainable=False)
                 weights[var] = tf.Variable(tf.ones(architecture[i]), name=vname+var, trainable=False)
-        weights['Wout'] = tf.Variable(tf.zeros([architecture[-1], n_out]), name=vname+'Wout', trainable=False)
-        weights['bout'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bout', trainable=False)
         return weights
 
 
 ########## ACQUISTION FUNCTIONS ###########
-	
-    def _acquisition_new(self, x, acq_func):
-	if acq_func == 'predictive_entropy':
-   	    acquisition = self._predictive_entropy(x)
-	elif acq_func == 'bald':
-   	    acquisition = self._bald(x)
-	elif acq_func == 'var_ratios':
-   	    acquisition = self._variational_ratios(x)
-	saver = tf.train.Saver()
-	with tf.Session() as session:
-	    ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
-	    saver.restore(session, ckpt.model_checkpoint_path)
-	    acq = session.run(acquisition)
-	return acq, np.argmax(acq)
 
-
-    def _predictive_entropy(self, x):
-	predictions = self.predict(x)
-	return -tf.reduce_sum(predictions[0] * tf.log(1e-10+predictions[0]),axis=1)
-
-
-    def _bald(self, x):
-	pred_samples = self.sample_y(x)
-	predictions = tf.reduce_mean(pred_samples, axis=2)	
+def _bald(self, x):
+        pred_samples = self.sample_y(x)
+        predictions = tf.reduce_mean(pred_samples, axis=2)
         H = -tf.reduce_sum(predictions * tf.log(1e-10+predictions), axis=1)
-	E = tf.reduce_mean(-tf.reduce_sum(pred_samples * tf.log(1e-10+pred_samples), axis=1), axis=1)
-	return H - E 
-
-
-    def _variational_ratios(self, x):
-	predictions = self.predict(x)
-	return 1 - tf.reduce_max(predictions[0], axis=1)
-
-
+        E = tf.reduce_mean(-tf.reduce_sum(pred_samples * tf.log(1e-10+pred_samples), axis=1), axis=1)
+        return H - E
 
 ###########################################
 
