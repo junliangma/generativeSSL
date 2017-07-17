@@ -61,7 +61,6 @@ class SSL_DATA:
         self._start_regular = 0
         self._epochs_regular = 0
 
-	#self.next_batch()
 
     def _split_data(self, x, y):
 	""" split the data according to the proportions """
@@ -198,9 +197,22 @@ class SSL_DATA:
 	return self.data['x_train'][:batch_size], self.data['y_train'][:batch_size]
 
 
+    def query(self, idx):
+	""" Implementation of an oracle for the data """
+	self.data['x_l'] = np.vstack((self.data['x_l'], self.data['x_u'][idx]))
+	self.data['y_l'] = np.vstack((self.data['y_l'], self.data['y_u'][idx]))
+	self.data['x_u'] = np.delete(self.data['x_u'], [idx], axis=0)
+	self.data['y_u'] = np.delete(self.data['y_u'], [idx], axis=0)
+	self.NUM_LABELED = self.data['x_l'].shape[0]
+	self.NUM_UNLABELED = self.data['x_u'].shape[0]
+	
 
-
-
-
+    def reset_counters(self):
+	# counters and indices for minibatching
+	self._start_labeled, self._start_unlabeled = 0, 0
+	self._epochs_labeled = 0
+	self._epochs_unlabeled = 0
+        self._start_regular = 0
+        self._epochs_regular = 0
 
 
