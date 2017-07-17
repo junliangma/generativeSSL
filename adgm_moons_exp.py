@@ -27,9 +27,9 @@ labeled_batchsize, unlabeled_batchsize = 6,100
 
 if model_type == 'gssl':
     z_dim = 5
-    learning_rate = (6e-4,)
+    learning_rate = (7e-4,)
     architecture = [128,128]
-    n_epochs = 25
+    n_epochs = 15
     temperature_epochs = 5
     start_temp = 0.0
     type_px = 'Gaussian'
@@ -54,14 +54,14 @@ if model_type == 'igssl':
 
 if model_type == 'bgssl':
     z_dim = 5
-    learning_rate = (3e-4,1000)
+    learning_rate = (3e-3,)
     architecture = [128,128]
-    n_epochs = 750 
-    temperature_epochs = 250
+    n_epochs = 50 
+    temperature_epochs = 15
     start_temp = 0.0
     initVar = -5.5
     type_px = 'Gaussian'
-    batchnorm = False 
+    batchnorm = True 
     binarize = False
     logging = False
     model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, BATCHNORM=batchnorm,
@@ -71,13 +71,14 @@ if model_type == 'bgssl':
 
 if model_type == 'm2':
     z_dim = 5
-    learning_rate = (5e-4,) 
+    learning_rate = (3e-3,) 
     architecture = [128, 128]
-    n_epochs = 150
-    temperature_epochs = 500
+    n_epochs = 500
+    temperature_epochs = 50
     start_temp = 0.0
     type_px = 'Gaussian' 
     verbose = 1
+    batchnorm = True
     binarize, logging = False, False
     
     model = m2(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
@@ -103,12 +104,17 @@ model.fit(data)
 
 
 ### Plotting Results
-range_x = np.arange(-1.5,2.5,.1)
-range_y = np.arange(-1.,1.5,.1)
-X,Y = np.mgrid[-1.5:2.5:.1, -1.:1.5:.1]
+if noise==str(0.1):
+    range_x = np.arange(-1.5,2.5,.1)
+    range_y = np.arange(-1.,1.5,.1)
+    X,Y = np.mgrid[-1.5:2.5:.1, -1.:1.5:.1]
+if noise==str(0.2):
+    range_x = np.arange(-.5,4.5,.1)
+    range_y = np.arange(0.,3.5,.1)
+    X,Y = np.mgrid[-.5:4.5:.1, 0.:3.5:.1]
 xy = np.vstack((X.flatten(), Y.flatten())).T
 
-print('Starting plotting work')
+print('Starting plotting work')	
 predictions = model.predict_new(xy.astype('float32'))
 
 
@@ -118,7 +124,8 @@ for i, row_val in enumerate(range_x):
         idx = np.intersect1d(np.where(np.isclose(xy[:,0],row_val))[0],np.where(np.isclose(xy[:,1],col_val))[0])
         zi[i,j] = predictions[idx[0],0] * 100
 
-plt.contourf(X, Y, zi,cmap=plt.cm.coolwarm)
+plt.figure()
+plt.contourf(X,Y,zi,cmap=plt.cm.coolwarm)
 print('Done with heat map')
 
 preds_test = model.predict_new(data.data['x_test'].astype('float32'))
