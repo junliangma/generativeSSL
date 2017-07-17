@@ -18,7 +18,7 @@ def _forward_pass_Gauss(x, weights, n_h, nonlinearity, bn, training):
 	weight_name, bias_name = 'W'+str(layer), 'b'+str(layer)
 	h = tf.matmul(h, weights[weight_name]) + weights[bias_name]
 	if bn:
-	    h = batch_norm_wrapper(h, weights, layer, training)
+	    h = batch_norm(h, weights, layer, training)
 	h = nonlinearity(h)
     mean = tf.matmul(h, weights['Wmean']) + weights['bmean']
     log_var = tf.matmul(h, weights['Wvar']) + weights['bvar']
@@ -31,14 +31,36 @@ def _forward_pass_Cat_logits(x, weights, n_h, nonlinearity, bn, training):
     	weight_name, bias_name = 'W'+str(layer), 'b'+str(layer)
 	h = tf.matmul(h, weights[weight_name]) + weights[bias_name]
 	if bn:
-	    h = batch_norm_wrapper(h, weights, layer, training)
+	    h = batch_norm(h, weights, layer, training)
         h = nonlinearity(h)
     logits = tf.matmul(h, weights['Wout']) + weights['bout']
     return logits
 
+
+def _forward_pass_Cat_logits_bnn(x, weights, q, n_h, nonlinearity, bn, training):
+    """ Forward pass through a BNN and variational approximation with weights as dictionaries """
+    h = x
+    for layer, neurons in enumerate(n_h):
+    	weight_name, bias_name = 'W'+str(layer), 'b'+str(layer)
+    	weight_mean, bias_mean = 'W'+str(layer)+'_mean', 'b'+str(layer)+'_mean'
+	htilde = tf.matmul(h, q[weight_mean]) + q[bias_mean]
+	h = tf.matmul(h, weights[weight_name]) + weights[bias_name]
+	if bn:
+	    h = bayes_batch_norm(h, htilde, weights, q, layer, training)
+        h = nonlinearity(h)
+    logits = tf.matmul(h, weights['Wout']) + weights['bout']
+    return logits
+
+
+
 def _forward_pass_Cat(x, weights, n_h, nonlinearity, bn=False, training=True):
     """ Forward pass through network with given weights - Categorical output """
     return tf.nn.softmax(_forward_pass_Cat_logits(x, weights, n_h, nonlinearity, bn, training))
+
+
+def _forward_pass_Cat_bnn(x, weights, q, n_h, nonlinearity, bn=False, training=True):
+    """ Forward pass through network with given weights - Categorical output """
+    return tf.nn.softmax(_forward_pass_Cat_logits_bnn(x, weights, q, n_h, nonlinearity, bn, training))
 
 
 def _forward_pass_Bernoulli(x, weights, n_h, nonlinearity, bn=False, training=True):
@@ -131,11 +153,28 @@ def xavier_initializer(fan_in, fan_out, constant=1):
             	              dtype=tf.float32)
 
 
-def batch_norm_wrapper(inputs, weights, layer, training, decay = 0.999, epsilon=1e-3):
+def batch_norm(inputs, weights, layer, training, decay=0.99, epsilon=1e-3):
     layer = str(layer)
-
-    if training is not None:
+ 
+    if training==True:
         batch_mean, batch_var = tf.nn.moments(inputs,[0])
+        train_mean = tf.assign(weights['mean'+layer],
+                               weights['mean'+layer] * decay + batch_mean * (1 - decay))
+        train_var = tf.assign(weights['var'+layer],
+                              weights['var'+layer] * decay + batch_var * (1 - decay))
+        with tf.control_dependencies([train_mean, train_var]):
+            return tf.nn.batch_normalization(inputs,
+                batch_mean, batch_var, weights['beta'+layer], weights['scale'+layer], epsilon)
+    else:
+        return tf.nn.batch_normalization(inputs,
+            weights['mean'+layer], weights['var'+layer], weights['beta'+layer], weights['scale'+layer], epsilon)
+		
+
+
+def bayes_batch_norm(inputs, var_inputs, weights, q, layer, training, decay=0.99, epsilon=1e-3):
+    layer = str(layer)
+    if training==True:
+        batch_mean, batch_var = tf.nn.moments(var_inputs,[0])
         train_mean = tf.assign(weights['mean'+layer],
                                weights['mean'+layer] * decay + batch_mean * (1 - decay))
         train_var = tf.assign(weights['var'+layer],
