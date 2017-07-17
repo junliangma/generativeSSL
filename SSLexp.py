@@ -60,14 +60,14 @@ elif dataset == 'mnist':
     data.create_semisupervised(num_labeled)    
 
     z_dim = 50
-    learning_rate = (3e-4,)
-    architecture = [500, 500]
+    learning_rate = (5e-4,)
+    architecture = [512, 512]
     n_epochs = 1500
     type_px = 'Bernoulli'
     temperature_epochs = 10
     start_temp = 0.0
-    binarize = True
-    logging = False
+    batchnorm = True
+    binarize, logging = True, False
     verbose = 1
 
 if dataset in ['moons', 'digits']:
@@ -80,7 +80,7 @@ elif dataset == 'mnist':
 		    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset=dataset, seed=seed)
 
 model = gssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+		BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 model.fit(data)
 
 

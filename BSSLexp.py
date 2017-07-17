@@ -7,6 +7,7 @@ import pickle, sys, pdb, gzip, cPickle
 import numpy as np
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
+from data.mnist import mnist
 from models.bgssl import bgssl
 
 def encode_onehot(labels):
@@ -67,16 +68,19 @@ elif dataset == 'digits':
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
-    labeled_proportion = 0.015
-    labeled_batchsize, unlabeled_batchsize = 64,128
-    x_train, y_train, x_test, y_test = load_mnist(target)
+    num_labeled = int(sys.argv[2])
+    labeled_batchsize, unlabeled_batchsize = 64,1024
+    data = mnist(target)
+    data.create_semisupervised(num_labeled)
 
-    z_dim = 100
-    learning_rate = 5e-5
-    architecture = [600, 600]
-    n_epochs = 500
+    z_dim = 50
+    learning_rate = (3e-4,)
+    initVar = -8.
+    architecture = [500, 500]
+    n_epochs = 1500
     type_px = 'Bernoulli'
     binarize = True
+    batchnorm = True
     logging = False
 
 if dataset in ['moons', 'digits']:
@@ -88,7 +92,7 @@ elif dataset == 'mnist':
     data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
 
 
-model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
+model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, BATCHNORM=batchnorm,
 		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, initVar=initVar, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 model.fit(data)
 
