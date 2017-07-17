@@ -31,7 +31,7 @@ class bgssl(model):
     	self.alpha = ALPHA 				     # weighting for additional term
 	self.initVar = initVar                               # initial variance for BNN prior weight distribution
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
-    
+	self.name = 'bgssl'    
 
     def fit(self, Data):
     	self._data_init(Data)
@@ -59,7 +59,9 @@ class bgssl(model):
 	    saver = tf.train.Saver()
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+
             while epoch < self.NUM_EPOCHS:
+		self.phase = True
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 	        if self.BINARIZE == True:
 	            x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
@@ -68,8 +70,7 @@ class bgssl(model):
             			     	     		               feed_dict={self.x_labeled: x_labeled, 
 	                   		    	 		               self.labels: labels,
 	          	            		     		               self.x_unlabeled: x_unlabeled,
-	        						               self.beta:self.schedule[epoch],
-									       self.phase:True})
+	        						               self.beta:self.schedule[epoch]})
 
 	        total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
@@ -95,8 +96,8 @@ class bgssl(model):
 	        				         feed_dict = {self.x_train:x_train,
 	        				     	              self.y_train:Data.data['y_train'],
 	        						      self.x_test:x_test,
-	        						      self.y_test:Data.data['y_test'],
-								      self.phase:False})
+	        						      self.y_test:Data.data['y_test']})
+
 	                print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
 	            epoch += 1 
 	    if self.LOGGING:
@@ -106,12 +107,12 @@ class bgssl(model):
     
 
     def predict_new(self, x, n_iters=20):
-        predictions = self.predict(x, n_iters)
         saver = tf.train.Saver()
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
-            preds = session.run([predictions])
+	    self.phase = False
+            preds = session.run([self.predict(x, n_iters)])
         return preds[0][0]
 
 
@@ -133,7 +134,8 @@ class bgssl(model):
 	for i in range(n_iters):
 	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
 	    h = tf.concat([x, z], axis=1)
-	    y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    #y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
 	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	return tf.reduce_mean(y_samps, axis=2), yq
@@ -160,6 +162,7 @@ class bgssl(model):
 	with tf.Session() as session:
 	    ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
 	    saver.restore(session, ckpt.model_checkpoint_path)
+	    self.phase = False
 	    z_ = np.random.normal(size=(n_samples, self.Z_DIM)).astype('float32')
 	    if self.TYPE_PX=='Gaussian':
                 x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
@@ -167,7 +170,8 @@ class bgssl(model):
                 x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             h = tf.concat([x_[0],z_], axis=1)
 	    self._sample_W()
-	    y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    ##y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])
         return x[0],y
 
@@ -260,7 +264,8 @@ class bgssl(model):
     def _compute_logpy(self, y, x, z):
 	""" compute the likelihood of every element in y under p(y|x,z, w) with sampled w"""
 	h = tf.concat([x,z], axis=1)
-	y_ = dgm._forward_pass_Cat_logits(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	y_ = dgm._forward_pass_Cat_logits_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	#y_ = dgm._forward_pass_Cat_logits(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
     def _kl_W(self):

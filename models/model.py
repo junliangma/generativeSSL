@@ -114,7 +114,7 @@ class model(object):
         self.y_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.NUM_CLASSES], name='y_train')
         self.x_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.X_DIM], name='x_test')
         self.y_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.NUM_CLASSES], name='y_test')
-	self.phase = tf.placeholder(tf.bool, name='phase')
+	self.phase = True 
 
 
     def _create_summaries(self, L_l, L_u, L_e):
@@ -134,9 +134,10 @@ class model(object):
 
 
     def _printing_feed_dict(self, Data, x, y):
+	self.phase = False 
 	return {self.x_train:Data.data['x_train'], self.y_train:Data.data['y_train'],
                 self.x_test:Data.data['x_test'], self.y_test:Data.data['y_test'],
-                self.x_labeled:x, self.labels:y, self.phase:False}
+                self.x_labeled:x, self.labels:y}
 
     def _print_verbose0(self, epoch, step, total_loss, l_l, l_u, l_e, acc_train, acc_test):
         print("Epoch {}: Total:{:5.1f}, Labeled:{:5.1f}, unlabeled:{:5.1f}, "
@@ -168,23 +169,27 @@ class model(object):
 
 
     def _allocate_directory(self):
-        self.LOGDIR = 'graphs/'+self.name+'-' +self.data_name+'-'+str(self.NUM_LABELED)+'/'
 	if self.ckpt == None:
+            self.LOGDIR = 'graphs/'+self.name+'-' +self.data_name+'-'+str(self.NUM_LABELED)+'/'
             self.ckpt_dir = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '/'
             self.ckpt_best = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '-best/'
 	else: 
+            self.LOGDIR = 'graphs/'+self.ckpt+'/' 
 	    self.ckpt_dir = './ckpt/' + self.ckpt + '/'
 	    self.ckpt_best = './ckpt/' + self.ckpt + '-best/'
         if not os.path.isdir(self.ckpt_dir):
             os.mkdir(self.ckpt_dir)
         if not os.path.isdir(self.ckpt_best):
             os.mkdir(self.ckpt_best)
+        if not os.path.isdir(self.LOGDIR):
+            os.mkdir(self.LOGDIR)
 
 
 
 ########## ACQUISTION FUNCTIONS ###########
 
     def _acquisition_new(self, x, acq_func):
+	self.phase=False
         if acq_func == 'predictive_entropy':
             acquisition = self._predictive_entropy(x)
         elif acq_func == 'bald':
@@ -208,7 +213,8 @@ class model(object):
         predictions = self.predict(x)
         return 1 - tf.reduce_max(predictions[0], axis=1)
 
-
+    def _random_query(self, x):
+	return np.random.normal(size=(x.shape[0],))
 
 ###########################################
 

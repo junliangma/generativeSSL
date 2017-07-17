@@ -22,9 +22,9 @@ import pdb
 class M2(model):
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALPHA=0.1, NONLINEARITY=tf.nn.relu, TYPE_PX='Gaussian', start_temp=0.8, BINARIZE=False,
- 		 temperature_epochs=None, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1, logging=True):
+ 		 BATCHNORM=False, temperature_epochs=None, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1, logging=True):
     	
-	super(M2, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
+	super(M2, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
 
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
@@ -65,7 +65,9 @@ class M2(model):
 	    saver = tf.train.Saver()
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+
             while epoch < self.NUM_EPOCHS:
+		self.phase = True
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
                 if self.BINARIZE == True:
                     x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
@@ -95,17 +97,17 @@ class M2(model):
 	        writer.close()
 
     def predict_new(self, x, n_iters=100):
-        predictions = self.predict(x)
         saver = tf.train.Saver()
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
-            preds = session.run([predictions])
+	    self.phase = False
+            preds = session.run([self.predict(x)])
         return preds[0]
 
 
     def predict(self, x):
-	return dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	return dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 
 
 
@@ -114,17 +116,17 @@ class M2(model):
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
-
+	    self.phase = False
             z_ = np.random.normal(size=(n_samples, self.Z_DIM)).astype('float32')
 	    p = np.ones(self.NUM_CLASSES)*(1/self.NUM_CLASSES)
 	    y_ = np.random.multinomial(1,p, size=n_samples).astype('float32')
 	    h = tf.concat([z_,y_], axis=1)
             if self.TYPE_PX=='Gaussian':
-                mean, logvar = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
+                mean, logvar = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 		eps = tf.random_normal([n_samples, self.X_DIM], dtype=tf.float32)
 		x_ = mean + tf.sqrt(tf.exp(logvar)) * eps
             else:
-                x_ = dgm._forward_pass_Bernoulli(z_, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
+                x_ = dgm._forward_pass_Bernoulli(z_, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x = session.run([x_])
         return x[0],y_
 
@@ -133,7 +135,7 @@ class M2(model):
     def _sample_Z(self, x, y, n_samples):
 	""" Sample from Z with the reparamterization trick """
 	h = tf.concat([x, y], axis=1)
-	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY)
+	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
 	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
 
@@ -150,7 +152,7 @@ class M2(model):
 
     def _unlabeled_loss(self, x):
 	""" Compute necessary terms for unlabeled loss (per data point) """
-	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
 	    y = self._generate_class(i, x.get_shape()[0])
@@ -160,7 +162,7 @@ class M2(model):
 
 
     def _qxy_loss(self, x, y):
-	y_ = dgm._forward_pass_Cat_logits(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY)
+	y_ = dgm._forward_pass_Cat_logits(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
 
@@ -168,10 +170,10 @@ class M2(model):
 	""" compute the likelihood of every element in x under p(x|z,y) """
 	h = tf.concat([z,y], axis=1)
 	if self.TYPE_PX == 'Gaussian':
-	    mean, log_var = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
+	    mean, log_var = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    return dgm._gauss_logp(x, mean, log_var)
 	elif self.TYPE_PX == 'Bernoulli':
-	    logits = dgm._forward_pass_Cat_logits(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY)
+	    logits = dgm._forward_pass_Cat_logits(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    return -tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=x, logits=logits), axis=1)
 
 
@@ -188,12 +190,12 @@ class M2(model):
     def _initialize_networks(self):
     	""" Initialize all model networks """
 	if self.TYPE_PX == 'Gaussian':
-    	    self.Pzy_x = dgm._init_Gauss_net(self.Z_DIM + self.NUM_CLASSES, self.NUM_HIDDEN, self.X_DIM, 'Pzy_x')
+    	    self.Pzy_x = dgm._init_Gauss_net(self.Z_DIM + self.NUM_CLASSES, self.NUM_HIDDEN, self.X_DIM, 'Pzy_x', self.batchnorm)
     	elif self.TYPE_PX =='Bernoulli':
-    	    self.Pzy_x = dgm._init_Cat_net(self.Z_DIM + self.NUM_CLASSES, self.NUM_HIDDEN, self.X_DIM, 'Pzy_x')	
+    	    self.Pzy_x = dgm._init_Cat_net(self.Z_DIM + self.NUM_CLASSES, self.NUM_HIDDEN, self.X_DIM, 'Pzy_x', self.batchnorm)	
     	self.Py = tf.constant((1./self.NUM_CLASSES)*np.ones(shape=(self.NUM_CLASSES,)), dtype=tf.float32)
-    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z')
-    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y')
+    	self.Qxy_z = dgm._init_Gauss_net(self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxy_z', self.batchnorm)
+    	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y', self.batchnorm)
 
     
     def _generate_class(self, k, num):
@@ -204,6 +206,7 @@ class M2(model):
 
 
     def _print_verbose1(self, epoch, fd, sess):
+	self.phase = False
 	zm_test, zlv_test, z_test = self._sample_Z(self.x_test,self.y_test,1)
         zm_train, zlv_train, z_train = self._sample_Z(self.x_train,self.y_train,1)
         lpx_test, lpx_train,klz_test,klz_train, acc_train, acc_test = sess.run([self._compute_logpx(self.x_test, z_test, self.y_test),

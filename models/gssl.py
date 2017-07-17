@@ -18,19 +18,18 @@ from tensorflow.contrib.tensorboard.plugins import projector
 class gssl(model):
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=0.5, 
-                 BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=True):
+                 BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=False, ckpt=None):
     	
-	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
+	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, ckpt=ckpt)
 
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
     	self.alpha = ALPHA 				     # weighting for additional term
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
-   	self.name = 'gssl'                                   # model name 
+	self.name = 'gssl'
 
     def fit(self, Data):
         self._data_init(Data)
-        
 	## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
@@ -41,7 +40,6 @@ class gssl(model):
         
         ## define optimizer 
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
-        gradients = tf.gradients(self.loss, tf.trainable_variables())
 	
 	## compute accuracies
 	self.train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
@@ -59,6 +57,7 @@ class gssl(model):
 
 
             while epoch < self.NUM_EPOCHS:
+		self.phase=True
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
 		if self.BINARIZE == True:
 	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
@@ -67,8 +66,7 @@ class gssl(model):
             			     	     		                  feed_dict={self.x_labeled: x_labeled, 
 		           		    	 		           self.labels: labels,
 		  	            		     		           self.x_unlabeled: x_unlabeled,
-									   self.beta:self.schedule[epoch],
-									   self.phase:True})
+									   self.beta:self.schedule[epoch]})
 		if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=self.global_step)
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
@@ -103,12 +101,12 @@ class gssl(model):
 
 
     def predict_new(self, x, n_iters=100):
-	predictions = self.predict(x, n_iters)
 	saver = tf.train.Saver()
 	with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
-            preds = session.run([predictions])
+	    self.phase=False
+	    preds = session.run([self.predict(x, n_iters)])
 	return preds[0][0]
 
 
@@ -132,13 +130,14 @@ class gssl(model):
 	with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
+	    self.phase=False
             z_ = np.random.normal(size=(n_samples, self.Z_DIM)).astype('float32')
             if self.TYPE_PX=='Gaussian':
                 x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             else:
             	x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             h = tf.concat([x_[0],z_], axis=1)
-            y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, False)
+            y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])
         return x[0],y
 
