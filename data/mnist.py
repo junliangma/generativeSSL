@@ -16,8 +16,9 @@ class mnist:
 	    train_set, val_set, test_set = cPickle.load(f)
   	self.x_train, self.y_train = train_set[0], self.encode_onehot(train_set[1])
   	self.x_val, self.y_val = val_set[0], self.encode_onehot(val_set[1])
-  	self.x_test, self.y_test = test_set[0], self.encode_onehot(test_set[1])
+  	self.x_test, self.y_test = test_set[0][:1000], self.encode_onehot(test_set[1][:1000])
 	self.n_train, self.n_val, self.n_test = self.x_train.shape[0], self.x_val.shape[0], self.x_test.shape[0]
+	self.drop_dimensions(0.1)
 	self.x_dim, self.num_classes = self.x_train.shape[1], self.y_train.shape[1]
 
     def create_semisupervised(self, num_labels):
@@ -32,6 +33,13 @@ class mnist:
 	    y_u.append(ycls[num_labels:])
 	    self.x_labeled, self.y_labeled = np.concatenate(x_l), np.concatenate(y_l)
 	    self.x_unlabeled, self.y_unlabeled = np.concatenate(x_u), np.concatenate(y_u)
+
+    def drop_dimensions(self, threshold=0.1):
+	stds = np.std(self.x_train, axis=0)
+	good_dims = np.where(stds>threshold)[0]
+	self.x_train = self.x_train[:,good_dims]
+	self.x_val = self.x_val[:,good_dims]
+	self.x_test = self.x_test[:,good_dims]
 
     def encode_onehot(self, labels):
 	n, d = labels.shape[0], np.max(labels)+1
