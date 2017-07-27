@@ -7,6 +7,7 @@ import pickle, sys, pdb, gzip, cPickle
 import numpy as np
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
+from data.mnist import mnist
 from models.kingmaM2 import M2 as m2
 
 def encode_onehot(labels):
@@ -66,17 +67,19 @@ elif dataset == 'digits':
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
-    labeled_proportion = 0.015
-    labeled_batchsize, unlabeled_batchsize = 64,128
-    x_train, y_train, x_test, y_test = load_mnist(target)
+    num_labeled = int(sys.argv[2])
+    labeled_batchsize, unlabeled_batchsize = 100,100
+    data = mnist(target, threshold=-1.0)
+    data.create_semisupervised(num_labeled)
 
     z_dim = 100
-    learning_rate = 5e-5
-    architecture = [600, 600]
-    n_epochs = 500
+    learning_rate = (3e-4,)
+    architecture = [500, 500]
+    n_epochs = 75
     type_px = 'Bernoulli'
     binarize = True
-    logging = False
+    temperature_epochs, start_temp = None, 0.0
+    logging, verbose = False, 1
 
 if dataset in ['moons', 'digits']:
     with open(target, 'rb') as f:
@@ -84,11 +87,11 @@ if dataset in ['moons', 'digits']:
     x, y = data['x'], data['y']
     data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed) 
 elif dataset == 'mnist':
-    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
-
+    data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test,
+                    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset=dataset, seed=seed)
 
 model = m2(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+		eval_samps=2000, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 model.fit(data)
 
 
@@ -130,4 +133,13 @@ if dataset == 'moons':
 
     
 
+if dataset=='mnist':
+    xsamp, ysamp = model._sample_xy(30)
+    for idx in range(30):
+        image = xsamp[idx]
+        plt.figure()
+        plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
+	plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
+        plt.savefig('./mnist_samps/M2sample'+str(idx), bbox_inches='tight')
+        plt.close()
 
