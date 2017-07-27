@@ -11,14 +11,14 @@ import tensorflow as tf
 
 class mnist:
 
-    def __init__(self, path='data/mnist.pkl.gz'):
+    def __init__(self, path='data/mnist.pkl.gz', threshold=0.1):
 	with gzip.open(path, 'rb') as f:
 	    train_set, val_set, test_set = cPickle.load(f)
   	self.x_train, self.y_train = train_set[0], self.encode_onehot(train_set[1])
   	self.x_val, self.y_val = val_set[0], self.encode_onehot(val_set[1])
-  	self.x_test, self.y_test = test_set[0][:1000], self.encode_onehot(test_set[1][:1000])
+  	self.x_test, self.y_test = test_set[0], self.encode_onehot(test_set[1])
 	self.n_train, self.n_val, self.n_test = self.x_train.shape[0], self.x_val.shape[0], self.x_test.shape[0]
-	self.drop_dimensions(0.1)
+	self.drop_dimensions(threshold)
 	self.x_dim, self.num_classes = self.x_train.shape[1], self.y_train.shape[1]
 
     def create_semisupervised(self, num_labels):
