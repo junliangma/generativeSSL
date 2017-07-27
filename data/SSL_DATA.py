@@ -196,6 +196,17 @@ class SSL_DATA:
         self.data['x_train'], self.data['y_train'] = self.data['x_train'][perm0,:], self.data['y_train'][perm0,:]
 	return self.data['x_train'][:batch_size], self.data['y_train'][:batch_size]
 
+    def sample_train(self, n_samples=1000):
+	perm_train = np.arange(self.TRAIN_SIZE)
+	np.random.shuffle(perm_train)
+        self.data['x_train'], self.data['y_train'] = self.data['x_train'][perm_train,:], self.data['y_train'][perm_train,:]
+	return self.data['x_train'][:n_samples], self.data['y_train'][:n_samples]
+	
+    def sample_test(self, n_samples=1000):
+	perm_test = np.arange(self.TEST_SIZE)
+	np.random.shuffle(perm_test)
+        self.data['x_test'], self.data['y_test'] = self.data['x_test'][perm_test,:], self.data['y_test'][perm_test,:]
+	return self.data['x_test'][:n_samples], self.data['y_test'][:n_samples]
 
     def query(self, idx):
 	""" Implementation of an oracle for the data """
