@@ -21,10 +21,10 @@ import pdb
 
 class M2(model):
    
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALPHA=0.1, NONLINEARITY=tf.nn.relu, TYPE_PX='Gaussian', start_temp=0.8, BINARIZE=False,
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=4, ALPHA=0.1, NONLINEARITY=tf.nn.relu, TYPE_PX='Gaussian', start_temp=0.8, BINARIZE=False, eval_samps=None,
  		 BATCHNORM=False, temperature_epochs=None, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, verbose=1, logging=True):
     	
-	super(M2, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging)
+	super(M2, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, eval_samps=eval_samps)
 
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
@@ -46,7 +46,7 @@ class M2(model):
         L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
         L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
 	weight_priors = self._weight_regularization() / (self.LABELED_BATCH_SIZE + self.UNLABELED_BATCH_SIZE)
-        self.loss = -(L_l + L_u + self.alpha * L_e - 0.8 * weight_priors)
+        self.loss = -(L_l + L_u + self.alpha * L_e - 0.3 * weight_priors)
 	
         ## define optimizer
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
@@ -79,7 +79,7 @@ class M2(model):
 		    writer.add_summary(summary_elbo, global_step=self.global_step)
                 total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
 
-                if Data._epochs_labeled > epoch:
+                if Data._epochs_unlabeled > epoch:
 		    fd = self._printing_feed_dict(Data, x_labeled, labels)
 		    acc_test, summary_acc = sess.run([self.test_acc, self.summary_op_acc], fd)
 	
@@ -126,7 +126,7 @@ class M2(model):
 		eps = tf.random_normal([n_samples, self.X_DIM], dtype=tf.float32)
 		x_ = mean + tf.sqrt(tf.exp(logvar)) * eps
             else:
-                x_ = dgm._forward_pass_Bernoulli(z_, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+                x_ = dgm._forward_pass_Bernoulli(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x = session.run([x_])
         return x[0],y_
 

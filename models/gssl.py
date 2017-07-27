@@ -18,9 +18,9 @@ from tensorflow.contrib.tensorboard.plugins import projector
 class gssl(model):
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=0.5, 
-                 BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=False, ckpt=None):
+                 BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, eval_samps=None, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=False, ckpt=None):
     	
-	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, ckpt=ckpt)
+	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, eval_samps=eval_samps, ckpt=ckpt)
 
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
@@ -36,7 +36,7 @@ class gssl(model):
         L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
         L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
 	weight_prior = self._weight_regularization() / (self.LABELED_BATCH_SIZE+self.UNLABELED_BATCH_SIZE)
-        self.loss = -(L_l + L_u + self.alpha*L_e - 0.5 * weight_prior)
+        self.loss = -(L_l + L_u + self.alpha*L_e - 0.1 * weight_prior)
         
         ## define optimizer 
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
@@ -52,6 +52,9 @@ class gssl(model):
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
 	    saver = tf.train.Saver()
+	    #self.epoch_test_acc.append(sess.run(self.test_acc,
+		#				{self.x_test:Data.data['x_test'],
+		#				 self.y_test:Data.data['y_test']}))
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
 
@@ -67,14 +70,16 @@ class gssl(model):
 		           		    	 		           self.labels: labels,
 		  	            		     		           self.x_unlabeled: x_unlabeled,
 									   self.beta:self.schedule[epoch]})
+		self.train_elbo.append(loss_batch)
 		if self.LOGGING:
              	    writer.add_summary(summary_elbo, global_step=self.global_step)
 		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
 
                 if Data._epochs_unlabeled > epoch:
+		    epoch += 1
 		    fd = self._printing_feed_dict(Data, x_labeled, labels)
 		    acc_train, acc_test, summary_acc = sess.run([self.train_acc, self.test_acc, self.summary_op_acc], fd)
-			
+		    self.epoch_test_acc.append(acc_test)
         	    
 		    self._save_model(saver,sess,step,max_acc,acc_test)
 		    max_acc = acc_test if acc_test > max_acc else max_acc
@@ -88,14 +93,13 @@ class gssl(model):
 		    
 		    elif self.verbose==1:
 		        """ Print semi-supervised aspects """
-			self._print_verbose1(epoch, fd, sess)
+			self._print_verbose1(epoch, fd, sess, acc_train, acc_test)
 	
 		    elif self.verbose==2:
 		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q], feed_dict=fd)
 		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
 
 
-		    epoch += 1
    	    if self.LOGGING:
 	        writer.close()
 
@@ -133,13 +137,13 @@ class gssl(model):
 	    self.phase=False
             z_ = np.random.normal(size=(n_samples, self.Z_DIM)).astype('float32')
             if self.TYPE_PX=='Gaussian':
-                x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+                x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)[0]
             else:
             	x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-            h = tf.concat([x_[0],z_], axis=1)
+            h = tf.concat([x_,z_], axis=1)
             y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])
-        return x[0],y
+        return x,y
 
     def _sample_Z(self, x, y, n_samples):
 	""" Sample from Z with the reparamterization trick """

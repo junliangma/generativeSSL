@@ -15,7 +15,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 class model(object):
 
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, batch_norm=False, temperature_epochs=None, 
-		start_temp=None,  NUM_EPOCHS=75, Z_SAMPLE=1, BINARIZE=False, logging=False, alpha=0.1, ckpt=None):
+		start_temp=None,  NUM_EPOCHS=75, Z_SAMPLE=1, BINARIZE=False, logging=False, alpha=0.1, eval_samps=None, ckpt=None):
 
 	self.Z_DIM = Z_DIM                       # number of labeled dimensions
 	self.NUM_HIDDEN = NUM_HIDDEN             # network architectures
@@ -29,6 +29,7 @@ class model(object):
 	self.BINARIZE = BINARIZE                 # binarize the data
 	self.LOGGING = False                     # log with tensorboard
 	self.alpha = alpha                       # temporary
+	self.eval_samps = eval_samps             # Number of samples for test/train evaluation (if none then all)
 	self.name = 'model'                      # model name
 	self.ckpt = ckpt 			 # preallocated checkpoint dir
 
@@ -67,6 +68,7 @@ class model(object):
 	self._create_placeholders()
 	self._set_schedule()
 	self._initialize_networks()
+	self.train_elbo, self.epoch_test_acc = [], []
 
     def _binarize(self, x):
 	return np.random.binomial(1,x)
@@ -91,15 +93,19 @@ class model(object):
     def _process_data(self, data):
         """ Extract relevant information from data_gen """
         self.N = data.N
-        self.TRAINING_SIZE = data.TRAIN_SIZE           # training set size
-        self.TEST_SIZE = data.TEST_SIZE                # test set size
+	if self.eval_samps==None:
+            self.TRAINING_SIZE = data.TRAIN_SIZE       # training set size
+            self.TEST_SIZE = data.TEST_SIZE            # test set size
+	else:
+            self.TRAINING_SIZE = self.eval_samps       # training set size
+            self.TEST_SIZE = self.eval_samps           # test set size	    
         self.NUM_LABELED = data.NUM_LABELED            # number of labeled instances
         self.NUM_UNLABELED = data.NUM_UNLABELED        # number of unlabeled instances
         self.X_DIM = data.INPUT_DIM                    # input dimension     
         self.NUM_CLASSES = data.NUM_CLASSES            # number of classes
-        self.alpha = self.alpha * self.NUM_LABELED     # weighting for additional term
         self.data_name = data.NAME                     # dataset being used   
         self._allocate_directory()                     # logging directory
+        self.alpha = self.alpha * (self.N/self.NUM_LABELED)     # weighting for additional term
 
 
     def _create_placeholders(self):
@@ -134,9 +140,11 @@ class model(object):
 
 
     def _printing_feed_dict(self, Data, x, y):
-	self.phase = False 
-	return {self.x_train:Data.data['x_train'], self.y_train:Data.data['y_train'],
-                self.x_test:Data.data['x_test'], self.y_test:Data.data['y_test'],
+	self.phase = False
+	x_train, y_train = Data.sample_train(self.TRAINING_SIZE)
+	x_test, y_test = Data.sample_test(self.TEST_SIZE) 
+	return {self.x_train:x_train, self.y_train:y_train,
+                self.x_test:x_test, self.y_test:y_test,
                 self.x_labeled:x, self.labels:y}
 
     def _print_verbose0(self, epoch, step, total_loss, l_l, l_u, l_e, acc_train, acc_test):
@@ -147,14 +155,13 @@ class model(object):
                                                                             acc_train, acc_test))   
 
 
-    def _print_verbose1(self,epoch, fd, sess, avg_var=None):
+    def _print_verbose1(self,epoch, fd, sess, acc_train, acc_test, avg_var=None):
 	zm_test, zlv_test, z_test = self._sample_Z(self.x_test,self.y_test,1 )
 	zm_train, zlv_train, z_train = self._sample_Z(self.x_train,self.y_train,1)
-	lpx_test, lpx_train,klz_test,klz_train, acc_train, acc_test = sess.run([self._compute_logpx(self.x_test, z_test), 
+	lpx_test, lpx_train, klz_test, klz_train = sess.run([self._compute_logpx(self.x_test, z_test), 
                                                                   self._compute_logpx(self.x_train, z_train),
                                                                   dgm._gauss_kl(zm_test, tf.exp(zlv_test)),
-                                                                  dgm._gauss_kl(zm_train, tf.exp(zlv_train)),
-                                                                  self.train_acc, self.test_acc], feed_dict=fd)
+                                                                  dgm._gauss_kl(zm_train, tf.exp(zlv_train))], feed_dict=fd)
 
 	if avg_var != None:
 	    print('Epoch: {}, logpx: {:5.3f}, klz: {:5.3f}, Train: {:5.3f}, Test: {:5.3f}, Variance: {:5.5f}'.format(epoch, np.mean(lpx_train), np.mean(klz_train), acc_train, acc_test, avg_var))
@@ -196,6 +203,8 @@ class model(object):
             acquisition = self._bald(x)
         elif acq_func == 'var_ratios':
             acquisition = self._variational_ratios(x)
+	elif acq_func == 'random':
+	    acquisition = self._random_query(x)
         saver = tf.train.Saver()
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
@@ -213,8 +222,15 @@ class model(object):
         predictions = self.predict(x)
         return 1 - tf.reduce_max(predictions[0], axis=1)
 
+    def _bald(self, x):
+	pred_samples = self.sample_y(x)
+        predictions = tf.reduce_mean(pred_samples, axis=2)
+        H = -tf.reduce_sum(predictions * tf.log(1e-10+predictions), axis=1)
+        E = tf.reduce_mean(-tf.reduce_sum(pred_samples * tf.log(1e-10+pred_samples), axis=1), axis=1)
+        return H - E
+
     def _random_query(self, x):
-	return np.random.normal(size=(x.shape[0],))
+	return tf.random_normal(shape=[x.shape[0]])
 
 ###########################################
 
