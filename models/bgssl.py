@@ -34,10 +34,11 @@ class bgssl(model):
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
 	self.name = 'bgssl'    
 
+
     def fit(self, Data):
     	self._data_init(Data)
+	self.preds = self.predict(self.x_new)
         ## define loss function
-	self._compute_loss_weights()
         L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
         L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
         L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
@@ -110,13 +111,13 @@ class bgssl(model):
 ########### PREDICTION METHODS ############
     
 
-    def predict_new(self, x, n_iters=20):
+    def predict_new(self, x, n_w=5, n_iters=10):
         saver = tf.train.Saver()
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
 	    self.phase = False
-            preds = session.run([self.predict(x, n_iters)])
+            preds = session.run([self.preds], {self.x_new:x})
         return preds[0][0]
 
 
@@ -171,7 +172,7 @@ class bgssl(model):
                 x_ = dgm._forward_pass_Gauss(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             else:
                 x_ = dgm._forward_pass_Bernoulli(z_, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-            h = tf.concat([x_[0],z_], axis=1)
+            h = tf.concat([x_,z_], axis=1)
 	    self._sample_W()
 	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])

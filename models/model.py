@@ -118,6 +118,7 @@ class model(object):
 	else:
 	    self.x_batch = tf.placeholder(tf.float32, shape=[self.BATCH_SIZE, self.X_DIM], name='x_batch')
         self.x_train = tf.placeholder(tf.float32, shape=[None, self.X_DIM], name='x_train')
+        self.x_new = tf.placeholder(tf.float32, shape=[None, self.X_DIM], name='x_new')	
         self.y_train = tf.placeholder(tf.float32, shape=[None, self.NUM_CLASSES], name='y_train')
         self.x_test = tf.placeholder(tf.float32, shape=[None, self.X_DIM], name='x_test')
         self.y_test = tf.placeholder(tf.float32, shape=[None, self.NUM_CLASSES], name='y_test')
