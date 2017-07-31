@@ -111,7 +111,7 @@ class bgssl(model):
 ########### PREDICTION METHODS ############
     
 
-    def predict_new(self, x, n_w=5, n_iters=10):
+    def predict_new(self, x):
         saver = tf.train.Saver()
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
