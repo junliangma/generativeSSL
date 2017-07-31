@@ -5,6 +5,7 @@ from collections import Counter
 from matplotlib import rc
 import pickle, sys, pdb, gzip, cPickle
 import numpy as np
+from sklearn.metrics import log_loss
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from data.mnist import mnist
@@ -77,7 +78,7 @@ elif dataset == 'mnist':
     learning_rate = (5e-4,)
     initVar = -12.
     architecture = [500, 500]
-    n_epochs = 500
+    n_epochs = 2 
     temperature_epochs=None
     start_temp = 0.0 
     type_px = 'Bernoulli'
@@ -141,13 +142,13 @@ if dataset=='mnist':
     acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
     print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
-    xsamp, ysamp = model._sample_xy(30)
-    for idx in range(30):
-        image = xsamp[idx]
-        plt.figure()
-        plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
-        plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
-        plt.savefig('./mnist_samps/SSLPEsample'+str(idx), bbox_inches='tight')
-        plt.close()   
+    #xsamp, ysamp = model._sample_xy(30)
+    #for idx in range(30):
+    #    image = xsamp[idx]
+    #    plt.figure()
+    #    plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
+    #    plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
+    #    plt.savefig('./mnist_samps/SSLPEsample'+str(idx), bbox_inches='tight')
+    #    plt.close()   
 
 
