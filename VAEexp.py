@@ -7,7 +7,9 @@ import pickle, gzip, cPickle, pdb, sys
 import numpy as np
 from sklearn.decomposition import PCA
 import tensorflow as tf
+from scipy.stats import norm
 from data.SSL_DATA import SSL_DATA
+from data.mnist import mnist
 from models.VAE import VAE
 
 def encode_onehot(labels):
@@ -49,15 +51,15 @@ if dataset == 'moons':
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
-    labeled_proportion = 0.015
-    labeled_batchsize, unlabeled_batchsize = 64,128
-    x_train, y_train, x_test, y_test = load_mnist(target)
-
-    z_dim = 100
-    learning_rate = 5e-5
-    architecture = [600, 600]
-    n_epochs = 500
+    data = mnist(target, threshold=-1.0)
+    z_dim = 2 
+    learning_rate = (1e-3,)
+    architecture = [500, 500]
+    n_epochs = 150
+    start_temp, temperature_epochs = 0.0, 10
+    batchsize=1024
     type_px = 'Bernoulli'
+    batchnorm = False
     binarize = True
     logging = False
 
@@ -68,12 +70,12 @@ if dataset in ['moons', 'digits']:
     x, y = data['x'], data['y']
     data = SSL_DATA(x,y, dataset=dataset, seed=seed)
 elif dataset == 'mnist':
-    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, dataset=dataset, seed=seed)
+    data = SSL_DATA(data.x_train, data.y_train, x_test=data.x_test, y_test=data.y_test, dataset=dataset, seed=seed)
 
 
 
 model = VAE(LEARNING_RATE=learning_rate, Z_DIM=z_dim, NUM_HIDDEN=architecture, BATCH_SIZE=batchsize, start_temp=start_temp, 
-	    NUM_EPOCHS=n_epochs, temperature_epochs=temperature_epochs, TYPE_PX=type_px, BINARIZE=binarize)
+	    BATCHNORM=batchnorm, NUM_EPOCHS=n_epochs, temperature_epochs=temperature_epochs, TYPE_PX=type_px, BINARIZE=binarize)
 model.fit(data)
 
 
@@ -104,5 +106,47 @@ if dataset=='moons':
     plt.savefig('../experiments/Moons/vae_encode', bbox_inches='tight')
 
 
+
+if dataset=='mnist':
+    #n_samps = 100
+    #samps = model._generate_data(n_samps)
+    #canvas = np.empty((28*10, 28*10))
+    #k = 0
+    #for i in range(10):
+    #    for j in range(10):
+    #        canvas[(10-i-1)*28:(10-i)*28, j*28:(j+1)*28] = samps[k].reshape(28,28)
+    #        k+=1
+    #plt.figure(figsize=(8, 10), frameon=False)
+    #plt.axis('off')
+    #plt.imshow(canvas, origin="upper", cmap="gray")
+    #plt.tight_layout()
+    #plt.savefig('./mnist_samps/samples', bbox_inches='tight')
+    #plt.close()
+
+
+    #for idx in range(n_samps):
+    #    image = samps[idx]
+    #    plt.figure()
+    #    plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
+    #    plt.savefig('./mnist_samps/sample'+str(idx), bbox_inches='tight')
+    #    plt.close()
+    
+    nx = ny = 20
+    x_values = np.linspace(.05, .95, nx)
+    y_values = np.linspace(.05, .95, ny)
+
+    canvas = np.empty((28*ny, 28*nx))
+    for i, yi in enumerate(x_values):
+        for j, xi in enumerate(y_values):
+            z_mu = np.array([[norm.ppf(xi), norm.ppf(yi)]]).astype('float32')
+            x_mean = model.decode_new(z_mu)
+            canvas[(nx-i-1)*28:(nx-i)*28, j*28:(j+1)*28] = x_mean[0].reshape(28, 28)
+
+    plt.figure(figsize=(8, 10), frameon=False)
+    plt.axis('off')
+    plt.imshow(canvas, origin="upper", cmap="gray")
+    plt.tight_layout()
+    plt.savefig('./mnist_samps/grid', bbox_inches='tight')
+    plt.close()
 
 

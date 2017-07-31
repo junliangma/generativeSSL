@@ -5,6 +5,7 @@ from collections import Counter
 from matplotlib import rc
 import pickle, sys, pdb, gzip, cPickle
 import numpy as np
+from sklearn.metrics import log_loss
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from data.mnist import mnist
@@ -73,9 +74,9 @@ elif dataset == 'mnist':
     data.create_semisupervised(num_labeled)
 
     z_dim = 100
-    learning_rate = (3e-4,)
+    learning_rate = (5e-4,)
     architecture = [500, 500]
-    n_epochs = 75
+    n_epochs = 250
     type_px = 'Bernoulli'
     binarize = True
     temperature_epochs, start_temp = None, 0.0
@@ -92,6 +93,7 @@ elif dataset == 'mnist':
 
 model = m2(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
 		eval_samps=2000, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+pdb.set_trace()
 model.fit(data)
 
 
@@ -134,6 +136,10 @@ if dataset == 'moons':
     
 
 if dataset=='mnist':
+    preds_test = model.predict_new(data.data['x_test'].astype('float32'))
+    acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
+    print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
+
     xsamp, ysamp = model._sample_xy(30)
     for idx in range(30):
         image = xsamp[idx]

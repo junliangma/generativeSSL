@@ -69,18 +69,20 @@ elif dataset == 'digits':
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
     num_labeled = int(sys.argv[2])
-    labeled_batchsize, unlabeled_batchsize = 64,1024
+    labeled_batchsize, unlabeled_batchsize = 100,100
     data = mnist(target)
     data.create_semisupervised(num_labeled)
 
-    z_dim = 50
-    learning_rate = (3e-4,)
-    initVar = -8.
+    z_dim = 100
+    learning_rate = (5e-4,)
+    initVar = -12.
     architecture = [500, 500]
-    n_epochs = 1500
+    n_epochs = 500
+    temperature_epochs=None
+    start_temp = 0.0 
     type_px = 'Bernoulli'
     binarize = True
-    batchnorm = True
+    batchnorm = False
     logging = False
 
 if dataset in ['moons', 'digits']:
@@ -89,11 +91,11 @@ if dataset in ['moons', 'digits']:
     x, y = data['x'], data['y']
     data = SSL_DATA(x,y, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed) 
 elif dataset == 'mnist':
-    data = SSL_DATA(x_train, y_train, x_test=x_test, y_test=y_test, labeled_proportion=labeled_proportion, dataset=dataset, seed=seed)
-
+    data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test,
+                    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset=dataset, seed=seed)
 
 model = bgssl(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, BATCHNORM=batchnorm,
-		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, initVar=initVar, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+		LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, initVar=initVar, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, eval_samps=2000, logging=logging)
 model.fit(data)
 
 
@@ -133,6 +135,19 @@ if dataset == 'moons':
     plt.scatter(x1[:,0],x1[:,1], s=1, color='b')
     plt.savefig('../experiments/Moons/sample_trial', bbox_inches='tight')
 
-    
+
+if dataset=='mnist':
+    preds_test = model.predict_new(data.data['x_test'].astype('float32'))
+    acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
+    print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
+
+    xsamp, ysamp = model._sample_xy(30)
+    for idx in range(30):
+        image = xsamp[idx]
+        plt.figure()
+        plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
+        plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
+        plt.savefig('./mnist_samps/SSLPEsample'+str(idx), bbox_inches='tight')
+        plt.close()   
 
 
