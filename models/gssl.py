@@ -17,7 +17,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 class gssl(model):
    
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=0.5, 
+    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=0.5, l2_reg=0.0,
                  BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, eval_samps=None, Z_SAMPLES=1, BINARIZE=False, verbose=1, logging=False, ckpt=None):
     	
 	super(gssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, eval_samps=eval_samps, ckpt=ckpt)
@@ -26,6 +26,7 @@ class gssl(model):
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
     	self.alpha = ALPHA 				     # weighting for additional term
     	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
+        self.l2_reg = l2_reg                                 # factor for l2 regularization
 	self.name = 'gssl'
 
     def fit(self, Data):
@@ -36,7 +37,7 @@ class gssl(model):
         L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
         L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
 	weight_prior = self._weight_regularization() / (self.LABELED_BATCH_SIZE+self.UNLABELED_BATCH_SIZE)
-        self.loss = -(L_l + L_u + self.alpha*L_e - 0.1 * weight_prior)
+        self.loss = -(L_l + L_u + self.alpha*L_e - self.l2_reg * weight_prior)
         
         ## define optimizer 
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
@@ -104,7 +105,7 @@ class gssl(model):
 	        writer.close()
 
 
-    def predict_new(self, x, n_iters=100):
+    def predict_new(self, x, n_iters=20):
 	saver = tf.train.Saver()
 	with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)

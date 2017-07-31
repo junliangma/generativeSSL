@@ -22,9 +22,10 @@ Here we implement Bayesian training for the model (hence Bgssl)
 class bgssl(model):
    
     def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, initVar=-5, start_temp=0.8, BATCHNORM=False, 
-                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, temperature_epochs=None, BINARIZE=False, verbose=1, logging=False, ckpt=None):
+                 LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, Z_SAMPLES=1, temperature_epochs=None, BINARIZE=False, verbose=1, logging=False, eval_samps=None, ckpt=None):
 	
-	super(bgssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, ckpt=ckpt)
+	super(bgssl, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, 
+		logging,eval_samps=eval_samps, ckpt=ckpt)
 
     	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
 	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
@@ -57,6 +58,9 @@ class bgssl(model):
             sess.run(tf.global_variables_initializer())
             total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
 	    saver = tf.train.Saver()
+	    #self.epoch_test_acc.append(sess.run(self.test_acc,
+		#				{self.x_test:Data.data['x_test'],
+		#				 self.y_test:Data.data['y_test']}))
 	    if self.LOGGING:
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
 
@@ -71,12 +75,13 @@ class bgssl(model):
 	                   		    	 		               self.labels: labels,
 	          	            		     		               self.x_unlabeled: x_unlabeled,
 	        						               self.beta:self.schedule[epoch]})
-
+		self.train_elbo.append(loss_batch)
 	        total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
                 if Data._epochs_unlabeled > epoch:
+	            epoch += 1 
 	            fd = self._printing_feed_dict(Data, x_labeled, labels)
 	            acc_train, acc_test, summary_acc = sess.run([self.train_acc, self.test_acc, self.summary_op_acc], fd)
-	        
+		    self.epoch_test_acc.append(acc_test)	        
 	            self._save_model(saver, sess, step, max_acc, acc_test)
 	            max_acc = acc_test if acc_test > max_acc else max_acc
 	            if self.LOGGING: 
@@ -89,7 +94,7 @@ class bgssl(model):
                     
 	            elif self.verbose == 1:
 	        	""" Print semi-supervised statistics"""
-	        	self._print_verbose1(epoch, fd, sess, avg_var)        	    	
+	        	self._print_verbose1(epoch, fd, sess, acc_train, acc_test, avg_var)        	    	
 
 	            elif self.verbose == 2:
 	                acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q],
@@ -99,7 +104,6 @@ class bgssl(model):
 	        						      self.y_test:Data.data['y_test']})
 
 	                print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
-	            epoch += 1 
 	    if self.LOGGING:
 	        writer.close()
     
@@ -135,7 +139,6 @@ class bgssl(model):
 	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
 	    h = tf.concat([x, z], axis=1)
 	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	    #y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
 	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	return tf.reduce_mean(y_samps, axis=2), yq
@@ -171,7 +174,6 @@ class bgssl(model):
             h = tf.concat([x_[0],z_], axis=1)
 	    self._sample_W()
 	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	    ##y_ = dgm._forward_pass_Cat(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])
         return x[0],y
 
@@ -251,21 +253,11 @@ class bgssl(model):
 
 ############ HELPER FUNCTIONS #############
 
-    def _compute_logpx(self, x, z):
-	""" compute the likelihood of every element in x under p(x|z) """
-	if self.TYPE_PX == 'Gaussian':
-	    mean, log_var = dgm._forward_pass_Gauss(z,self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	    return dgm._gauss_logp(x, mean, log_var)
-	elif self.TYPE_PX == 'Bernoulli':
-	    pi = dgm._forward_pass_Bernoulli(z, self.Pz_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	    return tf.reduce_sum(tf.add(x * tf.log(1e-10 + pi),  (1-x) * tf.log(1e-10 + 1 - pi)), axis=1)
-
 
     def _compute_logpy(self, y, x, z):
 	""" compute the likelihood of every element in y under p(y|x,z, w) with sampled w"""
 	h = tf.concat([x,z], axis=1)
 	y_ = dgm._forward_pass_Cat_logits_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	#y_ = dgm._forward_pass_Cat_logits(h, self.Wtilde, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
 
     def _kl_W(self):
@@ -342,11 +334,11 @@ class bgssl(model):
 ########## ACQUISTION FUNCTIONS ###########
 
 def _bald(self, x):
-        pred_samples = self.sample_y(x)
-        predictions = tf.reduce_mean(pred_samples, axis=2)
-        H = -tf.reduce_sum(predictions * tf.log(1e-10+predictions), axis=1)
-        E = tf.reduce_mean(-tf.reduce_sum(pred_samples * tf.log(1e-10+pred_samples), axis=1), axis=1)
-        return H - E
+    pred_samples = self.sample_y(x)
+    predictions = tf.reduce_mean(pred_samples, axis=2)
+    H = -tf.reduce_sum(predictions * tf.log(1e-10+predictions), axis=1)
+    E = tf.reduce_mean(-tf.reduce_sum(pred_samples * tf.log(1e-10+pred_samples), axis=1), axis=1)
+    return H - E
 
 ###########################################
 

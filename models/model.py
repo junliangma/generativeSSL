@@ -93,12 +93,13 @@ class model(object):
     def _process_data(self, data):
         """ Extract relevant information from data_gen """
         self.N = data.N
-	if self.eval_samps==None:
-            self.TRAINING_SIZE = data.TRAIN_SIZE       # training set size
-            self.TEST_SIZE = data.TEST_SIZE            # test set size
+        self.TRAINING_SIZE = data.TRAIN_SIZE           # training set size
+        self.TEST_SIZE = data.TEST_SIZE                # test set size
+        if self.eval_samps == None:
+            self.eval_samps = self.TRAINING_SIZE       # evaluation training set size
+	    self.eval_samps_test = self.TEST_SIZE      # evaluation test set size
 	else:
-            self.TRAINING_SIZE = self.eval_samps       # training set size
-            self.TEST_SIZE = self.eval_samps           # test set size	    
+	    self.eval_samps_test = self.eval_samps
         self.NUM_LABELED = data.NUM_LABELED            # number of labeled instances
         self.NUM_UNLABELED = data.NUM_UNLABELED        # number of unlabeled instances
         self.X_DIM = data.INPUT_DIM                    # input dimension     
@@ -116,10 +117,10 @@ class model(object):
             self.labels = tf.placeholder(tf.float32, shape=[self.LABELED_BATCH_SIZE, self.NUM_CLASSES], name='labels')
 	else:
 	    self.x_batch = tf.placeholder(tf.float32, shape=[self.BATCH_SIZE, self.X_DIM], name='x_batch')
-        self.x_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.X_DIM], name='x_train')
-        self.y_train = tf.placeholder(tf.float32, shape=[self.TRAINING_SIZE, self.NUM_CLASSES], name='y_train')
-        self.x_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.X_DIM], name='x_test')
-        self.y_test = tf.placeholder(tf.float32, shape=[self.TEST_SIZE, self.NUM_CLASSES], name='y_test')
+        self.x_train = tf.placeholder(tf.float32, shape=[None, self.X_DIM], name='x_train')
+        self.y_train = tf.placeholder(tf.float32, shape=[None, self.NUM_CLASSES], name='y_train')
+        self.x_test = tf.placeholder(tf.float32, shape=[None, self.X_DIM], name='x_test')
+        self.y_test = tf.placeholder(tf.float32, shape=[None, self.NUM_CLASSES], name='y_test')
 	self.phase = True 
 
 
@@ -141,8 +142,8 @@ class model(object):
 
     def _printing_feed_dict(self, Data, x, y):
 	self.phase = False
-	x_train, y_train = Data.sample_train(self.TRAINING_SIZE)
-	x_test, y_test = Data.sample_test(self.TEST_SIZE) 
+	x_train, y_train = Data.sample_train(self.eval_samps)
+	x_test, y_test = Data.sample_test(self.eval_samps_test) 
 	return {self.x_train:x_train, self.y_train:y_train,
                 self.x_test:x_test, self.y_test:y_test,
                 self.x_labeled:x, self.labels:y}
