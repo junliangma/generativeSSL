@@ -12,6 +12,12 @@ from models.bgssl import bgssl
 from models.gssl import gssl
 
 
+def plot_data(data, iteration, newpoint, acq_func, model_type):
+    plt.figure()
+    plt.scatter(data.data['x_u'][:,0], data.data['x_u'][:,1], color='gray', alpha=0.5)
+    plt.scatter(data.data['x_l'][:,0], data.data['x_l'][:,1], color='black' )
+    plt.scatter(newpoint[0], newpoint[1], color='red')
+    plt.savefig('./al_results/'+model_type+'_'+acq_func+'_'+str(iteration), bbox_inches='tight') 
 
 ### Active learning experimentation on the moons data ###
 
@@ -35,12 +41,12 @@ num_labeled = data.data['x_l'].shape[0]
 
 if model_type=='bgssl':
     z_dim = 5
-    learning_rate = (7e-4,)
+    learning_rate = (1e-3,)
     architecture = [128,128]
     n_epochs = 50
-    temperature_epochs = 10
+    temperature_epochs = 15
     start_temp = 0.0
-    initVar = -5.5
+    initVar = -6.5
     type_px = 'Gaussian'
     batchnorm = True
     binarize, logging = False, False
@@ -49,8 +55,8 @@ elif model_type=='gssl':
     z_dim = 5
     learning_rate = (5e-4,)
     architecture = [128,128]
-    n_epochs = 50
-    temperature_epochs = 10 
+    n_epochs = 25
+    temperature_epochs = 5
     start_temp = 0.0
     type_px = 'Gaussian'
     batchnorm = True
@@ -71,6 +77,7 @@ while num_labeled <= 30:
 		UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=1, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging, ckpt=ckpt)
     model.fit(data)
     _, idx_to_label = model._acquisition_new(data.data['x_u'].astype('float32'), acq_func)
+    plot_data(data, iteration, data.data['x_u'][idx_to_label], acq_func, model_type) 
     data.query(idx_to_label)
     
     preds = model.predict_new(data.data['x_test'].astype('float32'))
@@ -83,6 +90,9 @@ while num_labeled <= 30:
     data.reset_counters()
     del model
     tf.reset_default_graph()
+
+
+
 
 np.savetxt('./al_results/acc.txt', np.array(acc), fmt='%.4f', newline=" ")
 np.savetxt('./al_results/ll.txt', np.array(ll), fmt='%.4f', newline=" ")

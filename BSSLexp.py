@@ -78,7 +78,7 @@ elif dataset == 'mnist':
     learning_rate = (5e-4,)
     initVar = -12.
     architecture = [500, 500]
-    n_epochs = 2 
+    n_epochs = 150 
     temperature_epochs=None
     start_temp = 0.0 
     type_px = 'Bernoulli'
