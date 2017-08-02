@@ -87,3 +87,9 @@ if dataset == 'moons':
     plt.scatter(xl[:,0],xl[:,1], color='black')
     plt.savefig('../experiments/Moons/dnn_trial', bbox_inches='tight')
 
+
+if dataset == 'mnist':
+   preds_test = model.predict_new(data.data['x_test'].astype('float32'))
+   acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
+   print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
+
