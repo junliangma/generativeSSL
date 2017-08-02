@@ -108,45 +108,40 @@ if dataset=='moons':
 
 
 if dataset=='mnist':
-    #n_samps = 100
-    #samps = model._generate_data(n_samps)
-    #canvas = np.empty((28*10, 28*10))
-    #k = 0
-    #for i in range(10):
-    #    for j in range(10):
-    #        canvas[(10-i-1)*28:(10-i)*28, j*28:(j+1)*28] = samps[k].reshape(28,28)
-    #        k+=1
-    #plt.figure(figsize=(8, 10), frameon=False)
-    #plt.axis('off')
-    #plt.imshow(canvas, origin="upper", cmap="gray")
-    #plt.tight_layout()
-    #plt.savefig('./mnist_samps/samples', bbox_inches='tight')
-    #plt.close()
-
-
-    #for idx in range(n_samps):
-    #    image = samps[idx]
-    #    plt.figure()
-    #    plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
-    #    plt.savefig('./mnist_samps/sample'+str(idx), bbox_inches='tight')
-    #    plt.close()
-    
-    nx = ny = 20
-    x_values = np.linspace(.05, .95, nx)
-    y_values = np.linspace(.05, .95, ny)
-
-    canvas = np.empty((28*ny, 28*nx))
-    for i, yi in enumerate(x_values):
-        for j, xi in enumerate(y_values):
-            z_mu = np.array([[norm.ppf(xi), norm.ppf(yi)]]).astype('float32')
-            x_mean = model.decode_new(z_mu)
-            canvas[(nx-i-1)*28:(nx-i)*28, j*28:(j+1)*28] = x_mean[0].reshape(28, 28)
-
+    # plot n_samps x n_samps grid of random samples 
+    n_samps = 10
+    samps = model._generate_data(n_samps^2)
+    canvas = np.empty((28*n_samps, 28*n_samps))
+    k = 0
+    for i in range(n_samps):
+        for j in range(n_samps):
+            canvas[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = samps[k].reshape(28,28)
+            k+=1
     plt.figure(figsize=(8, 10), frameon=False)
     plt.axis('off')
     plt.imshow(canvas, origin="upper", cmap="gray")
     plt.tight_layout()
-    plt.savefig('./mnist_samps/grid', bbox_inches='tight')
+    plt.savefig('./mnist_samps/samples', bbox_inches='tight')
     plt.close()
+   
+    # Draw latent manifold (only if dim(z) = 2 )
+    if z_dim == 2:     
+        nx = ny = 20
+        x_values = np.linspace(.05, .95, nx)
+        y_values = np.linspace(.05, .95, ny)
+
+        canvas = np.empty((28*ny, 28*nx))
+        for i, yi in enumerate(x_values):
+            for j, xi in enumerate(y_values):
+                z_mu = np.array([[norm.ppf(xi), norm.ppf(yi)]]).astype('float32')
+                x_mean = model.decode_new(z_mu)
+                canvas[(nx-i-1)*28:(nx-i)*28, j*28:(j+1)*28] = x_mean[0].reshape(28, 28)
+
+        plt.figure(figsize=(8, 10), frameon=False)
+        plt.axis('off')
+        plt.imshow(canvas, origin="upper", cmap="gray")
+        plt.tight_layout()
+        plt.savefig('./mnist_samps/grid', bbox_inches='tight')
+        plt.close()
 
 
