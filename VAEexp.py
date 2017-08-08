@@ -31,7 +31,7 @@ def load_mnist(path='data/mnist.pkl.gz'):
 ## argv[3] - noise level for data
 
 
-dataset, noise = sys.argv[1], sys.argv[3]
+dataset, noise, threshold = sys.argv[1], sys.argv[3], float(sys.argv[3])
 seed = int(sys.argv[2])
 
 
@@ -51,12 +51,12 @@ if dataset == 'moons':
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
-    data = mnist(target, threshold=-1.0)
-    z_dim = 2 
+    data = mnist(target, threshold=threshold)
+    z_dim = 50 
     learning_rate = (1e-3,)
     architecture = [500, 500]
-    n_epochs = 150
-    start_temp, temperature_epochs = 0.0, 10
+    n_epochs = 100
+    start_temp, temperature_epochs = 0.0, 1
     batchsize=1024
     type_px = 'Bernoulli'
     batchnorm = False
@@ -107,25 +107,25 @@ if dataset=='moons':
 
 
 
-if dataset=='mnist':
+if dataset=='mnist' and threshold < 0.0:
     # plot n_samps x n_samps grid of random samples 
     n_samps = 10
-    samps = model._generate_data(n_samps^2)
+    samps = model._generate_data(n_samps**2)
     canvas = np.empty((28*n_samps, 28*n_samps))
     k = 0
     for i in range(n_samps):
         for j in range(n_samps):
-            canvas[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = samps[k].reshape(28,28)
+            canvas[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = (1-samps[k]).reshape(28,28)
             k+=1
     plt.figure(figsize=(8, 10), frameon=False)
     plt.axis('off')
     plt.imshow(canvas, origin="upper", cmap="gray")
     plt.tight_layout()
-    plt.savefig('./mnist_samps/samples', bbox_inches='tight')
+    plt.savefig('./mnist_samps/vae_samples_'+str(z_dim), bbox_inches='tight')
     plt.close()
    
     # Draw latent manifold (only if dim(z) = 2 )
-    if z_dim == 2:     
+    if z_dim == 5:     
         nx = ny = 20
         x_values = np.linspace(.05, .95, nx)
         y_values = np.linspace(.05, .95, ny)
@@ -135,13 +135,25 @@ if dataset=='mnist':
             for j, xi in enumerate(y_values):
                 z_mu = np.array([[norm.ppf(xi), norm.ppf(yi)]]).astype('float32')
                 x_mean = model.decode_new(z_mu)
-                canvas[(nx-i-1)*28:(nx-i)*28, j*28:(j+1)*28] = x_mean[0].reshape(28, 28)
+                canvas[(nx-i-1)*28:(nx-i)*28, j*28:(j+1)*28] = (1-x_mean[0]).reshape(28, 28)
 
         plt.figure(figsize=(8, 10), frameon=False)
         plt.axis('off')
         plt.imshow(canvas, origin="upper", cmap="gray")
         plt.tight_layout()
-        plt.savefig('./mnist_samps/grid', bbox_inches='tight')
+        plt.savefig('./mnist_samps/vae_manifold', bbox_inches='tight')
         plt.close()
 
-
+	
+    # Plot test data in latent space (only if dim(z) == 2 )
+    if z_dim==2:
+	z_test = model.encode_new(data.data['x_test'].astype('float32'))[0]
+	test_labs = np.argmax(data.data['y_test'],1)
+	cl = plt.cm.tab10(np.linspace(0,1,10))
+	plt.figure(figsize=(8,10), frameon=False)
+	for digit in range(10):
+	    indices = np.where(test_labs==digit)[0]
+	    plt.scatter(z_test[indices,0], z_test[indices,1], c=cl[digit], label='Digit: '+str(digit))
+	plt.legend()
+	plt.savefig('mnist_samps/vae_encode', bbox_inches='tight')
+	plt.close()

@@ -29,7 +29,7 @@ def load_mnist(path='data/mnist.pkl.gz'):
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled
 ## argv[3] - Dataset seed
-## argv[4] - noise level in moons dataset
+## argv[4] - noise level in moons dataset / threshold for mnist reduction
 
 
 dataset, noise = sys.argv[1], sys.argv[4]
@@ -69,16 +69,16 @@ elif dataset == 'digits':
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
-    num_labeled = int(sys.argv[2])
+    num_labeled, threshold = int(sys.argv[2]), float(noise)
     labeled_batchsize, unlabeled_batchsize = 100,100
-    data = mnist(target)
+    data = mnist(target, threshold=threshold)
     data.create_semisupervised(num_labeled)
 
     z_dim = 100
     learning_rate = (5e-4,)
     initVar = -12.
     architecture = [500, 500]
-    n_epochs = 150 
+    n_epochs = 150
     temperature_epochs=None
     start_temp = 0.0 
     type_px = 'Bernoulli'
@@ -138,17 +138,44 @@ if dataset == 'moons':
 
 
 if dataset=='mnist':
-    preds_test = model.predict_new(data.data['x_test'].astype('float32'))
-    acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
-    print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
+    #preds_test = model.predict_new(data.data['x_test'].astype('float32'))
+    #acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
+    #print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
-    #xsamp, ysamp = model._sample_xy(30)
-    #for idx in range(30):
-    #    image = xsamp[idx]
-    #    plt.figure()
-    #    plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
-    #    plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
-    #    plt.savefig('./mnist_samps/SSLPEsample'+str(idx), bbox_inches='tight')
-    #    plt.close()   
+    if z_dim ==2:
+        z_test = model.encode_new(data.data['x_test'].astype('float32'))
+        cl = plt.cm.tab10(np.linspace(0,1,10))
+        test_labs = np.argmax(data.data['y_test'], 1)
+        plt.figure(figsize=(8,10), frameon=False)
+        plt.axis('off')
+        for digit in range(10):
+            indices = np.where(test_labs==digit)[0]	
+            plt.scatter(z_test[indices, 0], z_test[indices, 1], c=cl[digit], label='Digit: '+str(digit))
+        plt.legend()
+        plt.savefig('mnist_samps/sslapd_encode', bbox_inches='tight')
 
+    # plot n_samps x n_samps grid of random samples
+    if threshold==-1.0:
+        n_samps = 10
+        samps, _ = model._sample_xy(n_samps**2)
+        canvas1 = np.empty((28*n_samps, 28*n_samps))
+        canvas2 = np.empty((28*n_samps, 28*n_samps))
+        k=0
+        for i in range(n_samps):
+            for j in range(n_samps):
+                canvas1[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = samps[k].reshape(28,28)
+                canvas2[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = (1-samps[k]).reshape(28,28)
+                k +=1
+        plt.figure(figsize=(8,10), frameon=False)
+        plt.axis('off')
+        plt.imshow(canvas1, origin="upper", cmap="gray")
+        plt.tight_layout()
+        plt.savefig('./mnist_samps/sslapd_'+str(num_labeled)+'_samps_black', bbox_inches='tight')
+        plt.close()
 
+        plt.figure(figsize=(8,10), frameon=False)
+        plt.axis('off')
+        plt.imshow(canvas2, origin="upper", cmap="gray")
+        plt.tight_layout()
+        plt.savefig('./mnist_samps/sslapd_'+str(num_labeled)+'_samps_white', bbox_inches='tight')
+        plt.close()

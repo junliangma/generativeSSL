@@ -29,7 +29,7 @@ def load_mnist(path='data/mnist.pkl.gz'):
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled
 ## argv[3] - Dataset seed
-## argv[4] - noise level in moons dataset
+## argv[4] - noise level in moons dataset/threshold for reduction in MNIST
 
 
 dataset, noise = sys.argv[1], sys.argv[4]
@@ -70,13 +70,13 @@ elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
     num_labeled = int(sys.argv[2])
     labeled_batchsize, unlabeled_batchsize = 100,100
-    data = mnist(target, threshold=-1.0)
+    data = mnist(target, threshold=float(noise))
     data.create_semisupervised(num_labeled)
 
-    z_dim = 100
+    z_dim = 2
     learning_rate = (5e-4,)
     architecture = [500, 500]
-    n_epochs = 250
+    n_epochs = 100
     type_px = 'Bernoulli'
     binarize = True
     temperature_epochs, start_temp = None, 0.0
@@ -93,7 +93,6 @@ elif dataset == 'mnist':
 
 model = m2(Z_DIM=z_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp,
 		eval_samps=2000, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
-pdb.set_trace()
 model.fit(data)
 
 

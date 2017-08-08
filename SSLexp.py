@@ -16,7 +16,7 @@ from models.gssl import gssl
 ## argv[1] - dataset to use (moons, digits, mnist)
 ## argv[2] - proportion of training data labeled (or for mnist, number of labels from each class)
 ## argv[3] - Dataset seed
-## argv[4] - noise level in moons dataset
+## argv[4] - noise level in moons dataset / Threshold for reduction in mnist
 
 
 dataset, noise = sys.argv[1], sys.argv[4]
@@ -55,15 +55,15 @@ elif dataset == 'digits':
 
 elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
-    num_labeled = int(sys.argv[2])
+    num_labeled, threshold = int(sys.argv[2]), float(noise)
     labeled_batchsize, unlabeled_batchsize = 100,100
-    data = mnist(target, threshold=-1.0)
+    data = mnist(target, threshold=threshold)
     data.create_semisupervised(num_labeled)    
 
     z_dim = 100
     learning_rate = (5e-4, )
     architecture = [500, 500]
-    n_epochs = 150
+    n_epochs = 150 
     type_px = 'Bernoulli'
     temperature_epochs, start_temp = None, 0.0
     l2_reg = 0.0
@@ -128,11 +128,31 @@ if dataset=='mnist':
     acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
     print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
-    xsamp, ysamp = model._sample_xy(30)
-    for idx in range(30):
-        image = xsamp[idx]
-        plt.figure()
-        plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
-        plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
-        plt.savefig('./mnist_samps/SSLPEsample'+str(idx), bbox_inches='tight')
-        plt.close()
+    # plot n_samps x n_samps grid of random samples
+    if threshold==-1.0:
+        n_samps = 10
+        samps, _ = model._sample_xy(n_samps**2)
+        canvas1 = np.empty((28*n_samps, 28*n_samps))
+        canvas2 = np.empty((28*n_samps, 28*n_samps))
+        k=0
+        for i in range(n_samps):
+            for j in range(n_samps):
+                canvas1[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = samps[k].reshape(28,28)
+                canvas2[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = (1-samps[k]).reshape(28,28)
+                k +=1
+
+        plt.figure(figsize=(8,10), frameon=False)
+        plt.axis('off')
+        plt.imshow(canvas1, origin="upper", cmap="gray")
+        plt.tight_layout()
+        plt.savefig('./mnist_samps/sslpe_'+str(num_labeled)+'_samps_black', bbox_inches='tight')
+	plt.close()
+
+        plt.figure(figsize=(8,10), frameon=False)
+        plt.axis('off')
+        plt.imshow(canvas2, origin="upper", cmap="gray")
+        plt.tight_layout()
+        plt.savefig('./mnist_samps/sslpe_'+str(num_labeled)+'_samps_white', bbox_inches='tight')
+	plt.close()
+
+
