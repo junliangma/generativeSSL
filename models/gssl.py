@@ -43,8 +43,8 @@ class gssl(model):
         self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
 	
 	## compute accuracies
-	self.train_acc, train_acc_q= self.compute_acc(self.x_train, self.y_train)
-	self.test_acc, test_acc_q = self.compute_acc(self.x_test, self.y_test)
+	self.train_acc, self.train_acc_q= self.compute_acc(self.x_train, self.y_train)
+	self.test_acc, self.test_acc_q = self.compute_acc(self.x_test, self.y_test)
 	self._create_summaries(L_l, L_u, L_e)
 
         ## initialize session and train
@@ -105,17 +105,6 @@ class gssl(model):
 	        writer.close()
 
 
-    def predict_new(self, x, n_iters=20):
-	saver = tf.train.Saver()
-	with tf.Session() as session:
-            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
-            saver.restore(session, ckpt.model_checkpoint_path)
-	    self.phase=False
-	    preds = session.run([self.predict(x, n_iters)])
-	return preds[0][0]
-
-
-
     def predict(self, x, n_iters=100):
 	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	yq = y_
@@ -128,6 +117,20 @@ class gssl(model):
 	    y_samps = tf.concat([y_samps, tf.expand_dims(y_, axis=2)], axis=2)
 	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
 	return tf.reduce_mean(y_samps, axis=2), yq
+
+
+    def encode(self, x, n_iters=100):
+	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES) 
+	_, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
+	z_samps = tf.expand_dims(z, axis=2)
+	for i in range(n_iters):
+	    h = tf.concat([x, z], axis=1)
+	    y_ = dgm._forward_pass_Cat(h, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
+	    z_samps = tf.concat([z_samps, tf.expand_dims(z, axis=2)], axis=2)
+	return tf.reduce_mean(z_samps, axis=2)	
 
 
     def _sample_xy(self, n_samples=int(1e3)):

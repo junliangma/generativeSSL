@@ -37,7 +37,6 @@ class bgssl(model):
 
     def fit(self, Data):
     	self._data_init(Data)
-	self.preds = self.predict(self.x_new)
         ## define loss function
         L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
         L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
@@ -111,15 +110,6 @@ class bgssl(model):
 ########### PREDICTION METHODS ############
     
 
-    def predict_new(self, x):
-        saver = tf.train.Saver()
-        with tf.Session() as session:
-            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
-            saver.restore(session, ckpt.model_checkpoint_path)
-	    self.phase = False
-            preds = session.run([self.preds], {self.x_new:x})
-        return preds[0][0]
-
 
     def predict(self, x, n_w=10, n_iters=20):
 	self._sample_W()
@@ -130,6 +120,31 @@ class bgssl(model):
             y_new, _ = self._predict_condition_W(x, n_iters) 
 	    y_ = tf.concat([y_, tf.expand_dims(y_new, axis=2)], axis=2)
         return tf.reduce_mean(y_, axis=2), yq
+
+
+    def encode(self, x, n_w=10, n_iters=20):
+	self._sample_W()
+	z_ = self._encode_condition_W(x, n_iters)
+	z_ = tf.expand_dims(z_, axis=2)
+	for i in range(n_w-1):
+   	    self._sample_W()
+            z_new = self._encode_condition_W(x, n_iters) 
+	    z_ = tf.concat([z_, tf.expand_dims(z_new, axis=2)], axis=2)
+        return tf.reduce_mean(z_, axis=2)
+
+
+    def _encode_condition_W(self, x, n_iters=20):
+	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	_, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
+	z_samps = tf.expand_dims(z, axis=2)
+	for i in range(n_iters):
+	    h = tf.concat([x, z], axis=1)
+	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	    y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	    _, _, z = self._sample_Z(x, y_, self.Z_SAMPLES)
+	    z_samps = tf.concat([z_samps, tf.expand_dims(z, axis=2)], axis=2)
+	return tf.reduce_mean(z_samps, axis=2)
 
     def _predict_condition_W(self, x, n_iters=20):
 	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
@@ -176,7 +191,7 @@ class bgssl(model):
 	    self._sample_W()
 	    y_ = dgm._forward_pass_Cat_bnn(h, self.Wtilde, self.Pzx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
             x,y = session.run([x_,y_])
-        return x[0],y
+        return x,y
 
 
     def _sample_Z(self, x, y, n_samples):

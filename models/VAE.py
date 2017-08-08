@@ -16,14 +16,13 @@ import pdb, os
 
 class VAE(model):
     def __init__(self, Z_DIM=2, NUM_HIDDEN=[4,4], LEARNING_RATE=0.005, NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=None,
-    		 BATCHNORM=True, BATCH_SIZE=16,NUM_EPOCHS=75, Z_SAMPLES=1, TYPE_PX='Gaussian', BINARIZE=False, LOGGING=False):
+    		 BATCHNORM=True, BATCH_SIZE=16,NUM_EPOCHS=75, Z_SAMPLES=1, TYPE_PX='Gaussian', BINARIZE=False, LOGGING=False, ckpt=None):
 
-	super(VAE, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, LOGGING)
+	super(VAE, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, LOGGING, ckpt=ckpt)
 	
 	self.BATCH_SIZE = BATCH_SIZE  # batch size
 	self.name = 'vae'             # model name
-	
-                        
+
 
     def fit(self, Data):
     	self._data_init(Data)	
@@ -43,7 +42,7 @@ class VAE(model):
 	    self.summary_op = tf.summary.merge_all()
 
     	# run and train
-    	epoch, step, steps2epoch = 0, 0, np.round(self.TRAINING_SIZE / self.BATCH_SIZE)
+    	epoch, step, global_step, steps2epoch = 0, 0, 0, np.round(self.TRAINING_SIZE / self.BATCH_SIZE)
     	with tf.Session() as sess:
 	    self.pase=True
     	    sess.run(tf.global_variables_initializer()) 
@@ -63,11 +62,12 @@ class VAE(model):
 		if self.LOGGING:
 		    writer.add_summary(summary, global_step=step)
     	    	total_loss += loss_batch
-    	    	step = step + 1 
+    	    	step += 1
+		global_step +=1 
 
     	    	if step > steps2epoch:
     	    	    print('Epoch: {}, total: {:5.3f}, logpx: {:5.3f}, klz: {:5.3f}'.format(epoch,loss_batch, px, kl))
-		    saver.save(sess, self.ckpt_dir, global_step=step)
+		    saver.save(sess, self.ckpt_dir, global_step=global_step)
     	    	    total_loss, step, epoch = 0.0, 0, epoch + 1
 	    if self.LOGGING:
       	        writer.close()
@@ -75,7 +75,7 @@ class VAE(model):
     
     def encode(self, x):
     	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_z, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-    	return mean, log_var
+    	return mean
 
 
     def decode(self, z):
@@ -100,16 +100,6 @@ class VAE(model):
     	l_px = self._compute_logpx(x, z)
 	total_elbo = l_px - self.beta * (KLz) 
         return tf.reduce_mean(total_elbo), tf.reduce_mean(l_px), tf.reduce_mean(KLz)
-
-    def encode_new(self, x):
-        saver = tf.train.Saver()
-	with tf.Session() as session:
-	    ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
-	    saver.restore(session, ckpt.model_checkpoint_path)
-	    z_ = self.encode(x)
-	    z = session.run(z_)
-	return z
-
 
     def decode_new(self, z):
         saver = tf.train.Saver()

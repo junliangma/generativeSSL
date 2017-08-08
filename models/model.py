@@ -41,6 +41,34 @@ class model(object):
 	    start_lr = LEARNING_RATE[0]
 	    self.lr = tf.train.exponential_decay(start_lr, self.global_step, LEARNING_RATE[1], 0.96)     
 
+
+    def encode_new(self, x):
+        saver = tf.train.Saver()
+        with tf.Session() as session:
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            saver.restore(session, ckpt.model_checkpoint_path)
+            self.phase = False
+            encoded = session.run([self.encoded], {self.x_new:x})
+        return encoded[0]
+
+    def predict_new(self, x):
+        saver = tf.train.Saver()
+        with tf.Session() as session:
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            saver.restore(session, ckpt.model_checkpoint_path)
+            self.phase = False
+            preds = session.run([self.predictions], {self.x_new:x})
+        return preds[0][0]
+
+### Every instance of model must implement these two methods ###
+
+    def predict(self, x):
+	pass
+
+    def encode(self, x):
+	pass
+
+################################################################
     def _compute_logpx(self, x, z, y=None):
         """ compute the likelihood of every element in x under p(x|z) """
         if self.TYPE_PX == 'Gaussian':
@@ -69,6 +97,8 @@ class model(object):
 	self._set_schedule()
 	self._initialize_networks()
 	self.train_elbo, self.epoch_test_acc = [], []
+	self.predictions = self.predict(self.x_new)
+	self.encoded = self.encode(self.x_new)
 
     def _binarize(self, x):
 	return np.random.binomial(1,x)
@@ -173,23 +203,17 @@ class model(object):
 
     def _save_model(self, saver, session, step, max_val, curr_val):
 	saver.save(session, self.ckpt_dir, global_step=step+1)
-	if curr_val > max_val:
-	    saver.save(session, self.ckpt_best, global_step=step+1)
 
 
     def _allocate_directory(self):
 	if self.ckpt == None:
-            self.LOGDIR = 'graphs/'+self.name+'-' +self.data_name+'-'+str(self.NUM_LABELED)+'/'
-            self.ckpt_dir = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '/'
-            self.ckpt_best = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.NUM_LABELED) + '-best/'
+            self.LOGDIR = './graphs/'+self.name+'-'+self.data_name+'-'+str(self.Z_DIM)+'-'+str(self.NUM_LABELED)+'/'
+            self.ckpt_dir = './ckpt/'+self.name+'-'+self.data_name+'-'+str(self.Z_DIM)+'-'+str(self.NUM_LABELED) + '/'
 	else: 
             self.LOGDIR = 'graphs/'+self.ckpt+'/' 
 	    self.ckpt_dir = './ckpt/' + self.ckpt + '/'
-	    self.ckpt_best = './ckpt/' + self.ckpt + '-best/'
         if not os.path.isdir(self.ckpt_dir):
             os.mkdir(self.ckpt_dir)
-        if not os.path.isdir(self.ckpt_best):
-            os.mkdir(self.ckpt_best)
         if not os.path.isdir(self.LOGDIR):
             os.mkdir(self.LOGDIR)
 
