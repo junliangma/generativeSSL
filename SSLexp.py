@@ -6,6 +6,7 @@ from matplotlib import rc
 import pickle, sys, pdb, gzip, cPickle
 import numpy as np
 from sklearn.metrics import log_loss
+from sklearn.manifold import TSNE as tsne
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from data.mnist import mnist
@@ -63,7 +64,7 @@ elif dataset == 'mnist':
     z_dim = 100
     learning_rate = (5e-4, )
     architecture = [500, 500]
-    n_epochs = 150 
+    n_epochs = 150
     type_px = 'Bernoulli'
     temperature_epochs, start_temp = None, 0.0
     l2_reg = 0.0
@@ -128,8 +129,25 @@ if dataset=='mnist':
     acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
     print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
+    ## t-sne visualization
+    cl = plt.cm.tab10(np.linspace(0,1,10))
+    test_labs = np.argmax(data.data['y_test'], 1)
+    z_test = model.encode_new(data.data['x_test'].astype('float32'))
+    np.save('./z_ssple', z_test)
+    np.save('./test_labs_sslpe', test_labs)
+    #t = tsne(n_components=2, random_state=0)
+    #print('Starting TSNE transform for latent encoding...')
+    #sslpe_reduced = t.fit_transform(z_test)
+    #print('Done with TSNE transformations...')
+    #plt.figure(figsize=(8,10), frameon=False)
+    #for digit in range(10):
+    #    indices = np.where(test_labs==digit)[0]
+    #    plt.scatter(sslpe_reduced[indices, 0], sslpe_reduced[indices, 1], c=cl[digit], label='Digit: '+str(digit))
+    #plt.legend()
+    #plt.savefig('mnist_samps/sslpe_encode', bbox_inches='tight')
+
     # plot n_samps x n_samps grid of random samples
-    if threshold==-1.0:
+    if threshold < 0.0:
         n_samps = 10
         samps, _ = model._sample_xy(n_samps**2)
         canvas1 = np.empty((28*n_samps, 28*n_samps))

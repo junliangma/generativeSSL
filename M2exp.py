@@ -34,6 +34,7 @@ def load_mnist(path='data/mnist.pkl.gz'):
 
 dataset, noise = sys.argv[1], sys.argv[4]
 seed = int(sys.argv[3])
+threshold = float(noise)
 
 
 if dataset == 'moons':
@@ -70,13 +71,13 @@ elif dataset == 'mnist':
     target = './data/mnist.pkl.gz'
     num_labeled = int(sys.argv[2])
     labeled_batchsize, unlabeled_batchsize = 100,100
-    data = mnist(target, threshold=float(noise))
+    data = mnist(target, threshold=threshold)
     data.create_semisupervised(num_labeled)
 
-    z_dim = 2
+    z_dim = 50
     learning_rate = (5e-4,)
     architecture = [500, 500]
-    n_epochs = 100
+    n_epochs = 75
     type_px = 'Bernoulli'
     binarize = True
     temperature_epochs, start_temp = None, 0.0
@@ -139,12 +140,18 @@ if dataset=='mnist':
     acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
     print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
-    xsamp, ysamp = model._sample_xy(30)
-    for idx in range(30):
-        image = xsamp[idx]
-        plt.figure()
-        plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
-	plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
-        plt.savefig('./mnist_samps/M2sample'+str(idx), bbox_inches='tight')
-        plt.close()
+    test_labs = np.argmax(data.data['y_test'], 1)
+    z_test = model.encode_new(data.data['x_test'].astype('float32'))
+    np.save('./z_m2', z_test)
+    np.save('./test_labs_m2', test_labs)
+    
+    if threshold < 0.0:
+        xsamp, ysamp = model._sample_xy(30)
+        for idx in range(30):
+            image = xsamp[idx]
+            plt.figure()
+            plt.imshow(image.reshape(28,28), vmin=0.0, vmax=1.0, cmap='gray')
+            plt.title('Labeled as: {}'.format(np.argmax(ysamp[idx])))
+            plt.savefig('./mnist_samps/M2sample'+str(idx), bbox_inches='tight')
+            plt.close()
 

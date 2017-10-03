@@ -6,6 +6,7 @@ from matplotlib import rc
 import pickle, gzip, cPickle, pdb, sys
 import numpy as np
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE as tsne
 import tensorflow as tf
 from scipy.stats import norm
 from data.SSL_DATA import SSL_DATA
@@ -55,7 +56,7 @@ elif dataset == 'mnist':
     z_dim = 50 
     learning_rate = (1e-3,)
     architecture = [500, 500]
-    n_epochs = 100
+    n_epochs = 150
     start_temp, temperature_epochs = 0.0, 1
     batchsize=1024
     type_px = 'Bernoulli'
@@ -107,25 +108,45 @@ if dataset=='moons':
 
 
 
-if dataset=='mnist' and threshold < 0.0:
-    # plot n_samps x n_samps grid of random samples 
-    n_samps = 10
-    samps = model._generate_data(n_samps**2)
-    canvas = np.empty((28*n_samps, 28*n_samps))
-    k = 0
-    for i in range(n_samps):
-        for j in range(n_samps):
-            canvas[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = (1-samps[k]).reshape(28,28)
-            k+=1
-    plt.figure(figsize=(8, 10), frameon=False)
-    plt.axis('off')
-    plt.imshow(canvas, origin="upper", cmap="gray")
-    plt.tight_layout()
-    plt.savefig('./mnist_samps/vae_samples_'+str(z_dim), bbox_inches='tight')
-    plt.close()
+if dataset=='mnist':
+    if threshold < 0:
+        # plot n_samps x n_samps grid of random samples 
+        n_samps = 10
+        samps = model._generate_data(n_samps**2)
+        canvas = np.empty((28*n_samps, 28*n_samps))
+        k = 0
+        for i in range(n_samps):
+            for j in range(n_samps):
+                canvas[(n_samps-i-1)*28:(n_samps-i)*28, j*28:(j+1)*28] = (1-samps[k]).reshape(28,28)
+                k+=1
+        plt.figure(figsize=(8, 10), frameon=False)
+        plt.axis('off')
+        plt.imshow(canvas, origin="upper", cmap="gray")
+        plt.tight_layout()
+        plt.savefig('./mnist_samps/vae_samples_'+str(z_dim), bbox_inches='tight')
+        plt.close()
+
+
+    # t-SNE of latent encoding for test set
+    cl = plt.cm.tab10(np.linspace(0,1,10))
+    test_labs = np.argmax(data.data['y_test'], 1)
+    z_test = model.encode_new(data.data['x_test'].astype('float32'))
+    np.save('./z_vae', z_test)
+    np.save('./test_labs_vae', test_labs)
+    #t = tsne(n_components=2, random_state=0)
+    #print('Starting TSNE transform for latent encoding...')
+    #vae_reduced = t.fit_transform(z_test)
+    #print('Done with TSNE transformations...')
+    #plt.figure(figsize=(8,10), frameon=False)
+    #for digit in range(10):
+    #    indices = np.where(test_labs==digit)[0]
+    #    plt.scatter(vae_reduced[indices, 0], vae_reduced[indices, 1], c=cl[digit], label='Digit: '+str(digit))
+    #plt.legend()
+    #plt.savefig('mnist_samps/vae_encode', bbox_inches='tight')
+
    
     # Draw latent manifold (only if dim(z) = 2 )
-    if z_dim == 5:     
+    if z_dim == 2 and threshold < 0:     
         nx = ny = 20
         x_values = np.linspace(.05, .95, nx)
         y_values = np.linspace(.05, .95, ny)
@@ -145,15 +166,3 @@ if dataset=='mnist' and threshold < 0.0:
         plt.close()
 
 	
-    # Plot test data in latent space (only if dim(z) == 2 )
-    if z_dim==2:
-	z_test = model.encode_new(data.data['x_test'].astype('float32'))[0]
-	test_labs = np.argmax(data.data['y_test'],1)
-	cl = plt.cm.tab10(np.linspace(0,1,10))
-	plt.figure(figsize=(8,10), frameon=False)
-	for digit in range(10):
-	    indices = np.where(test_labs==digit)[0]
-	    plt.scatter(z_test[indices,0], z_test[indices,1], c=cl[digit], label='Digit: '+str(digit))
-	plt.legend()
-	plt.savefig('mnist_samps/vae_encode', bbox_inches='tight')
-	plt.close()
