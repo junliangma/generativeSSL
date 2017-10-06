@@ -69,6 +69,7 @@ class model(object):
 	pass
 
 ################################################################
+    
     def _compute_logpx(self, x, z, y=None):
         """ compute the likelihood of every element in x under p(x|z) """
         if self.TYPE_PX == 'Gaussian':

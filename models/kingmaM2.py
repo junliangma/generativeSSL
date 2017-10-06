@@ -34,12 +34,9 @@ class M2(model):
     
 
     def fit(self, Data):
-    	self._process_data(Data)
-    	
-	self._create_placeholders() 
-	self._set_schedule()
-        self._initialize_networks()
-        
+
+        self._data_init(Data)
+ 
         ## define loss function
 	self._compute_loss_weights()
         L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
@@ -96,19 +93,17 @@ class M2(model):
 	    if self.LOGGING:
 	        writer.close()
 
-    def predict_new(self, x, n_iters=100):
-        saver = tf.train.Saver()
-        with tf.Session() as session:
-            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
-            saver.restore(session, ckpt.model_checkpoint_path)
-	    self.phase = False
-            preds = session.run([self.predict(x)])
-        return preds[0]
-
 
     def predict(self, x):
-	return dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	return (dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase),) 
 
+
+    def encode(self, x):
+	y_ = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	h = tf.concat([x,y_], axis=1)
+	zm, zlv = dgm._forward_pass_Gauss(h, self.Qxy_z, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
+	return zm
 
 
     def _sample_xy(self, n_samples=int(1e3)):
@@ -183,7 +178,7 @@ class M2(model):
 
 
     def compute_acc(self, x, y):
-	y_ = self.predict(x)
+	y_ = self.predict(x)[0]
 	return  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
 
 
