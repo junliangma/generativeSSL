@@ -11,6 +11,8 @@ import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from data.mnist import mnist
 from models.aux_gssl2 import agssl
+from models.sdgssl import sdgssl
+from models.adgm import adgm
 
 ### Script to run an experiment with generative SSL model ###
 
@@ -18,10 +20,12 @@ from models.aux_gssl2 import agssl
 ## argv[2] - proportion of training data labeled (or for mnist, number of labels from each class)
 ## argv[3] - Dataset seed
 ## argv[4] - noise level in moons dataset / Threshold for reduction in mnist
+## argv[5] - model to use (adgm, adgssl, sdgssl)
 
 
 dataset, noise = sys.argv[1], sys.argv[4]
 seed = int(sys.argv[3])
+modelName = sys.argv[5]
 
 
 if dataset == 'moons':
@@ -41,20 +45,18 @@ if dataset == 'moons':
     logging = False
 
 
-elif dataset == 'mnist':
-    target = './data/mnist.pkl.gz'
     num_labeled, threshold = int(sys.argv[2]), float(noise)
     labeled_batchsize, unlabeled_batchsize = 100,100
     data = mnist(target, threshold=threshold)
     data.create_semisupervised(num_labeled)    
 
     z_dim, a_dim = 100, 100
-    learning_rate = (7e-4, )
+    learning_rate = (3e-4,)
     architecture = [500, 500]
     n_epochs = 500
     type_px = 'Bernoulli'
     temperature_epochs, start_temp = None, 0.0
-    l2_reg = 0.01
+    l2_reg = 0.0
     batchnorm = False
     binarize, logging = True, False
     verbose = 1
@@ -68,8 +70,25 @@ elif dataset == 'mnist':
     data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test, 
 		    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset=dataset, seed=seed)
 
-model = agssl(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
-		l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
+if modelName=='agssl':
+	model = agssl(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
+			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
+			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
+			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
+elif modelName=='sdgssl':
+	model = sdssl(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
+			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
+			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
+			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
+elif modelName=='adgm':
+	model = adgm(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
+			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
+			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
+			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+
 model.fit(data)
 
 
