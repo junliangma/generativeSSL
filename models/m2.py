@@ -32,10 +32,12 @@ class m2(model):
 	""" Define model components and variables """
 	self.create_placeholders()
 	self.initialize_networks()
-
+	## model variables and relations ##
+	# infernce #
         self.y_ = dgm.forwardPassCatLogits(self.x, self.qy_x, self.n_hid, self.nonlinearity, self.bn, scope='qy_x', reuse=False)
 	self.qz_in = tf.concat([self.x, self.y], axis=-1) 
 	self.qz_mean, self.qz_lv, self.z_ = dgm.samplePassGauss(self.qz_in, self.qz_xy, self.n_hid, self.nonlinearity, self.bn, scope='qz_xy', reuse=False)
+	# generative #
 	self.z_prior = tf.random_normal([100, self.n_z])
 	self.px_in = tf.concat([self.y, self.z_prior], axis=-1)
 	if self.x_dist == 'Gaussian':
@@ -49,16 +51,16 @@ class m2(model):
 	self.elbo_l = tf.reduce_mean(self.labeled_loss(self.x_l, self.y_l))
 	self.qy_ll = tf.reduce_mean(self.qy_loss(self.x_l, self.y_l))
 	self.elbo_u = tf.reduce_mean(self.unlabeled_loss(self.x_u))
-	weight_priors = self.weight_regularization()/5000
+	weight_priors = self.weight_regularization()/4000
 	return -(self.elbo_l + self.elbo_u + self.alpha * self.qy_ll -  weight_priors)
 
     def labeled_loss(self, x, y):
 	z_m, z_lv, z = self.sample_z(x,y)
 	l_px = self.compute_logpx(x,y,z)
-	l_py = dgm.multinoulliUniformLogDensity(y)
-	l_pz = tf.reduce_mean(dgm.standardNormalLogDensity(z), axis=0)
-	l_qz = tf.reduce_mean(dgm.gaussianLogDensity(z, z_m, z_lv), axis=0)
-	return l_px + l_py + l_pz - l_qz
+	l_py = tf.tile(tf.expand_dims(dgm.multinoulliUniformLogDensity(y),0),[self.mc_samples,1])
+	l_pz = dgm.standardNormalLogDensity(z)
+	l_qz = dgm.gaussianLogDensity(z, z_m, z_lv)
+	return tf.reduce_mean(l_px + l_py + l_pz - l_qz, axis=0)
 
     def unlabeled_loss(self, x):
 	qy_l = self.predict(x)
@@ -84,11 +86,11 @@ class m2(model):
 	if self.x_dist == 'Gaussian':
             mean, log_var = dgm.forwardPassGauss(px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz')
 	    mean, log_var = tf.reshape(mean, [self.mc_samples, -1, self.n_x]),  tf.reshape(log_var, [self.mc_samples, -1, self.n_x])
-            return tf.reduce_mean(dgm.gaussianLogDensity(x_, mean, log_var), axis=0)
+            return dgm.gaussianLogDensity(x_, mean, log_var)
         elif self.x_dist == 'Bernoulli':
             logits = dgm.forwardPassCatLogits(px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz')
 	    logits = tf.reshape(logits, [self.mc_samples, -1, self.n_x])
-            return tf.reduce_mean(dgm.bernoulliLogDensity(x_, logits), axis=0) 
+            return dgm.bernoulliLogDensity(x_, logits) 
 
     def predict(self, x):
 	""" predict y for given x with q(y|x) """
