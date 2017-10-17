@@ -20,209 +20,141 @@ Inference network: q(a,z,y|x) = q(a|x) * q(y|a,x) * q(z|a,y,x)
 
 class adgm(model):
    
-    def __init__(self, Z_DIM=2, LEARNING_RATE=0.005, NUM_HIDDEN=[4], ALPHA=0.1, TYPE_PX='Gaussian', NONLINEARITY=tf.nn.relu, temperature_epochs=None, start_temp=0.5, l2_reg=0.0,
-                 BATCHNORM=False, LABELED_BATCH_SIZE=16, UNLABELED_BATCH_SIZE=128, NUM_EPOCHS=75, eval_samps=None, Z_SAMPLES=1, BINARIZE=False, A_DIM=1,
-		 verbose=1, logging=False, ckpt=None):
-    	
-	super(adgm, self).__init__(Z_DIM, LEARNING_RATE, NUM_HIDDEN, TYPE_PX, NONLINEARITY, BATCHNORM, temperature_epochs, start_temp, NUM_EPOCHS, Z_SAMPLES, BINARIZE, logging, eval_samps=eval_samps, ckpt=ckpt)
-
-    	self.LABELED_BATCH_SIZE = LABELED_BATCH_SIZE         # labeled batch size 
-	self.UNLABELED_BATCH_SIZE = UNLABELED_BATCH_SIZE     # labeled batch size 
-	self.A_DIM = A_DIM                                   # auxiliary variable dimension
-    	self.alpha = ALPHA 				     # weighting for additional term
-    	self.verbose = verbose				     # control output: 0-ELBO, 1-accuracy, 2-Q-accuracy
-        self.l2_reg = l2_reg                                 # factor for l2 regularization
+    def __init__(self, n_x, n_y, n_z=2, n_a=2, n_hid=[4], alpha=0.1, x_dist='Gaussian', nonlinearity=tf.nn.relu, batchnorm=False, mc_samples=1,ckpt=None):
+	
+	self.n_a = n_a        # auxiliary variable dimension
 	self.name = 'adgm'
-
-    def fit(self, Data):
-        self._data_init(Data)
-	## define loss function
-        L_l = tf.reduce_mean(self._labeled_loss(self.x_labeled, self.labels))
-        L_u = tf.reduce_mean(self._unlabeled_loss(self.x_unlabeled))
-        L_e = tf.reduce_mean(self._qxy_loss(self.x_labeled, self.labels))
-	weight_prior = self._weight_regularization() / (self.LABELED_BATCH_SIZE+self.UNLABELED_BATCH_SIZE)
-        self.loss = -(L_l + L_u + self.alpha*L_e - self.l2_reg * weight_prior)
-        
-        ## define optimizer 
-        self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
-	
-	## compute accuracies
-	self.train_acc, self.train_acc_q= self.compute_acc(self.x_train, self.y_train)
-	self.test_acc, self.test_acc_q = self.compute_acc(self.x_test, self.y_test)
-	self._create_summaries(L_l, L_u, L_e)
-
-        ## initialize session and train
-        max_acc, epoch, step = 0, 0, 0
-	with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            total_loss, l_l, l_u, l_e = 0.0, 0.0, 0.0, 0.0
-	    saver = tf.train.Saver()
-	    #self.epoch_test_acc.append(sess.run(self.test_acc,
-		#				{self.x_test:Data.data['x_test'],
-		#				 self.y_test:Data.data['y_test']}))
-	    if self.LOGGING:
-                writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
+    	
+	super(adgm, self).__init__(n_x, n_y, n_z, n_hid, x_dist, nonlinearity, batchnorm, mc_samples, alpha, ckpt)
 
 
-            while epoch < self.NUM_EPOCHS:
-		self.phase=True
-                x_labeled, labels, x_unlabeled, _ = Data.next_batch(self.LABELED_BATCH_SIZE, self.UNLABELED_BATCH_SIZE)
-		if self.BINARIZE == True:
-	 	    x_labeled, x_unlabeled = self._binarize(x_labeled), self._binarize(x_unlabeled)
-		
-            	_, loss_batch, l_lb, l_ub, l_eb, summary_elbo = sess.run([self.optimizer, self.loss, L_l, L_u, L_e, self.summary_op_elbo], 
-            			     	     		                  feed_dict={self.x_labeled: x_labeled, 
-		           		    	 		           self.labels: labels,
-		  	            		     		           self.x_unlabeled: x_unlabeled,
-									   self.beta:self.schedule[epoch]})
-		self.train_elbo.append(loss_batch)
-		if self.LOGGING:
-             	    writer.add_summary(summary_elbo, global_step=self.global_step)
-		total_loss, l_l, l_u, l_e, step = total_loss+loss_batch, l_l+l_lb, l_u+l_ub, l_e+l_eb, step+1
+	""" TODO: add any general terms we want to have here """
+	self.train_acc = self.compute_acc(self.x_train, self.y_train)
+	self.test_acc = self.compute_acc(self.x_test, self.y_test)
+	self.predictions = self.predict(self.x_new)
 
-                if Data._epochs_unlabeled > epoch:
-		    epoch += 1
-		    fd = self._printing_feed_dict(Data, x_labeled, labels)
-		    acc_train, acc_test, summary_acc = sess.run([self.train_acc, self.test_acc, self.summary_op_acc], fd)
-		    self.epoch_test_acc.append(acc_test)
-        	    
-		    self._save_model(saver,sess,step,max_acc,acc_test)
-		    max_acc = acc_test if acc_test > max_acc else max_acc
-		    if self.LOGGING:
-         	        writer.add_summary(summary_acc, global_step=epoch)
-		    
-		    if self.verbose==0:
-		        """ Print ELBOs and accuracy"""
-		    	self._print_verbose0(epoch, step, total_loss, l_l, l_u, l_e, acc_train, acc_test)
-        	        total_loss, l_l, l_u, l_e, step = 0.0, 0.0, 0.0, 0.0, 0
-		    
-		    elif self.verbose==1:
-		        """ Print semi-supervised aspects """
-			self._print_verbose1(epoch, fd, sess, acc_train, acc_test)
-	
-		    elif self.verbose==2:
-		        acc_train, acc_test,  = sess.run([train_acc_q, test_acc_q], feed_dict=fd)
-		        print('At epoch {}: Training: {:5.3f}, Test: {:5.3f}'.format(epoch, acc_train, acc_test))
+    def build_model(self):
+	""" Define model components and variables """
+	self.create_placeholders()
+	self.initialize_networks()
 
+	### labeled components ###
+	## recognition q(a|x) ##
+	self.qa_mean_l, self.qa_lv_l, self.a_l = dgm.samplePassGauss(self.x_l, self.qa_x, self.n_hid, self.nonlinearity, self.bn, True, 'qa_x')
+	## recognition q(z|x,y,a)## 
+	self.l_qz_in = tf.concat([self.x_l, self.y, self.a_l], axis=1)
+	self.qz_mean_l, self.qz_lv_l, self.z_l = dgm.samplePassGauss(self.l_qz_in, self.qz_xya, self.n_hid, self.nonlinearity, self.bn, True, 'qz_xya')
+	## classifier q(y|x,a) ##
+	self.l_qy_in = tf.concat([self.x_l, self.a_l], axis=1)
+	self.l_qy_l = dgm.forwardPassCatLogits(self.l_qy_in, self.qy_xa, self.n_hid, self.nonlinearity, self.bn, True, 'qy_xa')
+	## generative p(x|z,y) ##
+	self.l_px_in = tf.concat([self.y, self.z_l], axis=1)
+	if self.x_dist == 'Gaussian':
+	    self.px_mean_l, self.px_lv_l = dgm.forwardPassGauss(self.l_px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, True, 'px_yz')	    
+	elif self.x_dist == 'Bernoulli':
+	    self.l_px_l = dgm.forwardPassCatLogits(self.l_px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, True, 'px_yz')
+	## generative p(a|x,y,z) ##
+	self.l_pa_in = tf.concat([self.x_l, self.y, self.z_l], axis=1)
+	self.pa_mean_l, self.pa_lv_l = dgm.forwardPassGauss(self.l_pa_in, self.pa_xyz, self.n_hid, self.nonlinearity, self.bn, True, 'pa_xyz')
 
-   	    if self.LOGGING:
-	        writer.close()
+	### unlabeled components ###
+	# first compute a_u since it is out of y expectation 
+	self.qa_mean_u, self.qa_lv_u, self.a_u = dgm.samplePassGauss(self.x_u, self.qa_x, self.n_hid, self.nonlinearity, self.bn, True, 'qa_x')
+	# tile x_u, a_u parameters, and generate y_u
+	self.xu_tiled, self.au_tiled = tf.tile(self.x_u, [self.n_y, 1]), tf.tile(self.a_u, [self.n_y, 1])
+	self.qa_mean_tiled, self.qa_lv_tiled = tf.tile(self.qa_mean_u, [self.n_y, 1]), tf.tile(self.qa_lv_u, [self.n_y, 1])	
+	self.y_u = tf.reshape(tf.tile(tf.eye(self.n_y), [1, tf.shape(self.x_u)[0]]), [-1, self.n_y])
+	## recognition q(z|x,y,a)## 
+	self.u_qz_in = tf.concat([self.xu_tiled, self.y_u, self.au_tiled], axis=1)
+	self.qz_mean_u, self.qz_lv_u, self.z_u = dgm.samplePassGauss(self.u_qz_in, self.qz_xya, self.n_hid, self.nonlinearity, self.bn, True, 'qz_xya')
+	## classifier q(y|x,a) ##
+	self.u_qy_in = tf.concat([self.x_u, self.a_u], axis=1)
+	self.qy = dgm.forwardPassCat(self.u_qy_in, self.qy_xa, self.n_hid, self.nonlinearity, self.bn, True, 'qy_xa')
+	## generative p(x|z,y) ##
+	self.u_px_in = tf.concat([self.y_u, self.z_u], axis=1)
+	if self.x_dist == 'Gaussian':
+	    self.px_mean_u, self.px_lv_u = dgm.forwardPassGauss(self.u_px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, True, 'px_yz')	    
+	elif self.x_dist == 'Bernoulli':
+	    self.l_px_u = dgm.forwardPassCatLogits(self.u_px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, True, 'px_yz')
+	## generative p(a|x,y,z) ##
+	self.u_pa_in = tf.concat([self.xu_tiled, self.y_u, self.z_u], axis=1)
+	self.pa_mean_u, self.pa_lv_u = dgm.forwardPassGauss(self.u_pa_in, self.pa_xyz, self.n_hid, self.nonlinearity, self.bn, True, 'pa_xyz')
 
+    def compute_loss(self):
+	""" manipulate computed components and compute loss """
+	l_lb = self.labeled_loss()
+	l_ub = self.unlabeled_loss()
+	qy_loglik = dgm.multinoulliLogDensity(self.y, self.l_qy_l)
+	weight_priors = self.weight_regularization()
+	self.elbo_l = tf.reduce_mean(l_lb)
+	self.elbo_u = tf.reduce_mean(l_ub)
+	return (tf.reduce_mean(l_lb + l_ub + self.alpha * qy_loglik)*self.n - weight_priors)/(-self.n)
+
+    def labeled_loss(self):
+	""" Compute necessary terms for labeled loss (per data point) """
+	l_pz = dgm.standardNormalLogDensity(self.z_l)
+	l_py = dgm.multinoulliUniformLogDensity(self.y)
+	if self.x_dist == 'Gaussian':
+	    l_px = dgm.gaussianLogDensity(self.x_l, self.px_mean_l, self.px_lv_l)
+	elif self.x_dist == 'Bernoulli':
+	    l_px = dgm.bernoulliLogDensity(self.x_l, self.l_px_l)
+	l_pa = dgm.gaussianLogDensity(self.a_l, self.pa_mean_l, self.pa_lv_l)
+	l_qz = dgm.gaussianLogDensity(self.z_l, self.qz_mean_l, self.qz_lv_l)
+	l_qa = dgm.gaussianLogDensity(self.a_l, self.qa_mean_l, self.qa_lv_l)
+	return l_px + l_py + l_pz + l_pa - l_qz - l_qa 
+
+    def unlabeled_loss(self):
+	""" Compute necessary terms for unlabeled loss (per data point) """
+	### compute relevant densities ##
+	l_pz = dgm.standardNormalLogDensity(self.z_u)
+	l_py = dgm.multinoulliUniformLogDensity(self.y_u)
+	if self.x_dist == 'Gaussian':
+	    l_px = dgm.gaussianLogDensity(self.xu_tiled, self.px_mean_u, self.px_lv_u)
+	elif self.x_dist == 'Bernoulli':
+	    l_px = dgm.bernoulliLogDensity(self.xu_tiled, self.l_px_u)
+	l_pa = dgm.gaussianLogDensity(self.au_tiled, self.pa_mean_u, self.pa_lv_u)
+	l_qz = dgm.gaussianLogDensity(self.z_u, self.qz_mean_u, self.qz_lv_u)
+	l_qa = dgm.gaussianLogDensity(self.au_tiled, self.qa_mean_tiled, self.qa_lv_tiled)
+	### sum densities and reshape them into n_u x n_y matrix ###
+	n_u = tf.shape(self.x_u)[0] 
+	densities = tf.transpose(tf.reshape(l_px + l_py + l_pz + l_pa - l_qz - l_qa,  [self.n_y, n_u]))
+	### take expectations w.r.t. q(y|x,a) and add entropy ###
+	qy_entropy = -tf.reduce_sum(self.qy * tf.log(1e-10 + self.qy), axis=1)
+	return tf.reduce_sum(self.qy * densities, axis=1) + qy_entropy
 
     def predict(self, x):
-	_, _, a = self._sample_a(x, self.Z_SAMPLES)
+	""" predict y for given x with q(y|x,a) """
+	_, _, a = dgm.samplePassGauss(x, self.qa_x, self.n_hid, self.nonlinearity, self.bn, True, 'qa_x')
 	h = tf.concat([x,a], axis=1)
-	y_ = dgm._forward_pass_Cat(h, self.Qxa_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	return tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES)
+	return dgm.forwardPassCat(h, self.qy_xa, self.n_hid, self.nonlinearity, self.bn, True, 'qy_xa'), a
 
-
-    def encode(self, x, n_iters=100):
-	_, _, a = self._sample_a(x, self.Z_SAMPLES)
-	h = tf.concat([x,a], axis=1)
-	y_ = dgm._forward_pass_Cat(h, self.Qxa_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	y_ = tf.one_hot(tf.argmax(y_, axis=1), self.NUM_CLASSES) 
-	_, _, z = self._sample_Z(x, y_, a, self.Z_SAMPLES)
+    def encode(self, x, y=None, n_iters=100):
+	""" encode a new example into z-space (labeled or unlabeled) """
+	_, _, a = dgm.samplePassGauss(x, self.qa_x, self.n_hid, self.nonlinearity, self.bn, True, 'qa_x')
+	if y is None:
+	    h = tf.concat([x,a], axis=1)
+	    y = tf.one_hot(tf.argmax(dgm.forwardPassCat(h, self.qy_xa, self.n_hid, self.nonlinearity, self.bn, True, 'qa_x'), axis=1), self.n_y)
+	h = tf.concat([x,y,a], axis=1)
+	_, _, z = dgm.samplePassGauss(h, self.qz_xya, self.n_hid, self.nonlinearity, self.bn, True, 'qz_xya')
 	return z
 
-    def _sample_xy(self, n_samples=int(1e3)):
-	pass
-
-    def _sample_Z(self, x, y, a, n_samples):
-	""" Sample from Z with the reparamterization trick """
-	h = tf.concat([x, y, a], axis=1)
-	mean, log_var = dgm._forward_pass_Gauss(h, self.Qxya_z, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	eps = tf.random_normal([tf.shape(x)[0], self.Z_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
-
-    def _sample_a(self, x, n_samples):
-	""" Sample from a with the reparamterization trick """
-	mean, log_var = dgm._forward_pass_Gauss(x, self.Qx_a, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	eps = tf.random_normal([tf.shape(x)[0], self.A_DIM], 0, 1, dtype=tf.float32)
-	return mean, log_var, mean + tf.sqrt(tf.exp(log_var)) * eps
-
-    def _labeled_loss(self, x, y):
-	""" Compute necessary terms for labeled loss (per data point) """
-	qa_mean, qa_log_var, a = self._sample_a(x, self.Z_SAMPLES)
-	q_mean, q_log_var, z = self._sample_Z(x, y, a, self.Z_SAMPLES)
-	h = tf.concat([x,y,z], axis=1)
-	pa_mean, pa_log_var = dgm._forward_pass_Gauss(h, self.Pzxy_a, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	l_px = self._compute_logpx(x, z, y)
-	l_py = self._compute_logpy(y)
-	l_pz = dgm._gauss_logp(z, tf.zeros_like(z), tf.log(tf.ones_like(z)))
-	l_pa = dgm._gauss_logp(a, pa_mean, pa_log_var)
-	l_qz = dgm._gauss_logp(z, q_mean, q_log_var)
-	l_qa = dgm._gauss_logp(a, qa_mean, qa_log_var)
-	return l_px + l_py + self.beta * (l_pz + l_pa - l_qz - l_qa)
-
-    def _unlabeled_loss(self, x):
-	""" Compute necessary terms for unlabeled loss (per data point) """
-	_, _, a = self._sample_a(x, self.Z_SAMPLES)
-	h = tf.concat([x,a], axis=1)
-	weights = dgm._forward_pass_Cat(h, self.Qxa_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	EL_l = 0 
-	for i in range(self.NUM_CLASSES):
-	    y = self._generate_class(i, x.get_shape()[0])
-	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
-	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(1e-10 + weights)), axis=1)
-	return EL_l + ent_qy, EL_l, ent_qy
-
-
-    def _qxy_loss(self, x, y):
-	_, _, a = self._sample_a(x, self.Z_SAMPLES)
-	h = tf.concat([x,a], axis=1)
-	y_ = dgm._forward_pass_Cat_logits(h, self.Qxa_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-	return -tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_)
-
-    def _compute_logpx(self, x, z, y):
-        """ compute the likelihood of every element in x under p(x|z,y) """
-        h = tf.concat([z,y], axis=1)
-        if self.TYPE_PX == 'Gaussian':
-            mean, log_var = dgm._forward_pass_Gauss(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-            return dgm._gauss_logp(x, mean, log_var)
-        elif self.TYPE_PX == 'Bernoulli':
-            logits = dgm._forward_pass_Cat_logits(h, self.Pzy_x, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
-            return -tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=x, logits=logits), axis=1)
-
-    def _compute_logpy(self, y):
-	""" compute the likelihood of every element in y under p(y) """
-	return tf.reduce_mean(tf.multiply(y, tf.log(self.Py + 1e-10)), axis=1)	
-
-
     def compute_acc(self, x, y):
-	y_ = self.predict(x)
+	y_, _ = self.predict(x)
 	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
-	return acc, acc
+	return acc 
 
-
-    def _initialize_networks(self):
+    def initialize_networks(self):
     	""" Initialize all model networks """
-	if self.TYPE_PX == 'Gaussian':
-      	    self.Pzy_x = dgm._init_Gauss_net(self.Z_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.X_DIM, 'Pzy_x_', self.batchnorm)
-	elif self.TYPE_PX == 'Bernoulli':
-	    self.Pzy_x = dgm._init_Cat_net(self.Z_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.X_DIM, 'Pzy_x_', self.batchnorm)
-	self.Py = tf.constant((1./self.NUM_CLASSES)*np.ones(shape=(self.NUM_CLASSES,)), dtype=tf.float32)
-	self.Pzxy_a = dgm._init_Gauss_net(self.Z_DIM+self.X_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.A_DIM, 'P_A_', self.batchnorm) 
-    	self.Qxya_z = dgm._init_Gauss_net(self.X_DIM+self.A_DIM+self.NUM_CLASSES, self.NUM_HIDDEN, self.Z_DIM, 'Qxya_z_', self.batchnorm)
-    	self.Qx_a = dgm._init_Gauss_net(self.X_DIM, self.NUM_HIDDEN, self.A_DIM, 'Qx_a_', self.batchnorm)
-    	self.Qxa_y = dgm._init_Cat_net(self.X_DIM+self.A_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qxa_y_', self.batchnorm)
+	if self.x_dist == 'Gaussian':
+      	    self.px_yz = dgm.initGaussNet(self.n_z+self.n_y, self.n_hid, self.n_x, 'px_yz_')
+	elif self.x_dist == 'Bernoulli':
+	    self.px_yz = dgm.initCatNet(self.n_z+self.n_y, self.n_hid, self.n_x, 'px_yz_')
+	self.pa_xyz = dgm.initGaussNet(self.n_z+self.n_x+self.n_y, self.n_hid, self.n_a, 'pa_xyz_') 
+    	self.qz_xya = dgm.initGaussNet(self.n_x+self.n_a+self.n_y, self.n_hid, self.n_z, 'qz_xya_')
+    	self.qa_x = dgm.initGaussNet(self.n_x, self.n_hid, self.n_a, 'qa_x_')
+    	self.qy_xa = dgm.initCatNet(self.n_x+self.n_a, self.n_hid, self.n_y, 'qy_xa_')
 
-    
-
-    def _generate_class(self, k, num):
-	""" create one-hot encoding of class k with length num """
-	y = np.zeros(shape=(num, self.NUM_CLASSES))
-	y[:,k] = 1
-	return tf.constant(y, dtype=tf.float32)
-
-
-    def _print_verbose1(self,epoch, fd, sess, acc_train, acc_test, avg_var=None):
-        am_test, alv_test, a_test = self._sample_a(self.x_test, 1)
-        am_train, alv_train, a_train = self._sample_a(self.x_train, 1)
-        zm_test, zlv_test, z_test = self._sample_Z(self.x_test, self.y_test, a_test, 1)
-        zm_train, zlv_train, z_train = self._sample_Z(self.x_train,self.y_train, a_train, 1)
-        lpx_test, lpx_train, klz_test, klz_train = sess.run([self._compute_logpx(self.x_test, z_test, self.y_test),
-                                                                  self._compute_logpx(self.x_train, z_train, self.y_train),
-                                                                  dgm._gauss_kl(zm_test, tf.exp(zlv_test)),
-                                                                  dgm._gauss_kl(zm_train, tf.exp(zlv_train))], feed_dict=fd)
-
-	print('Epoch: {}, logpx: {:5.3f}, klz: {:5.3f}, Train: {:5.3f}, Test: {:5.3f}'.format(epoch, np.mean(lpx_train), np.mean(klz_train), acc_train, acc_test))
+    def print_verbose(self, verbose, epoch, fd, sess):
+	train_acc, test_acc, elbo_l, elbo_u = sess.run([self.train_acc, self.test_acc, self.elbo_l, self.elbo_u] ,fd)
+	print("Epoch: {}: Labeled: {:5.3f}, Unlabeled: {:5.3f}, Training: {:5.3f}, Testing: {:5.3f}".format(epoch, elbo_l, elbo_u, train_acc, test_acc))	
+	 
