@@ -150,7 +150,7 @@ class M2(model):
 	weights = dgm._forward_pass_Cat(x, self.Qx_y, self.NUM_HIDDEN, self.NONLINEARITY, self.batchnorm, self.phase)
 	EL_l = 0 
 	for i in range(self.NUM_CLASSES):
-	    y = self._generate_class(i, x.get_shape()[0])
+	    y = self._generate_clasa(i, x.get_shape()[0])
 	    EL_l += tf.multiply(weights[:,i], self._labeled_loss(x, y))
 	ent_qy = -tf.reduce_sum(tf.multiply(weights, tf.log(weights+1e-10)), axis=1)
 	return tf.add(EL_l, ent_qy)
@@ -193,7 +193,7 @@ class M2(model):
     	self.Qx_y = dgm._init_Cat_net(self.X_DIM, self.NUM_HIDDEN, self.NUM_CLASSES, 'Qx_y', self.batchnorm)
 
     
-    def _generate_class(self, k, num):
+    def _(self, k, num):
 	""" create one-hot encoding of class k with length num """
 	y = np.zeros(shape=(num, self.NUM_CLASSES))
 	y[:,k] = 1
