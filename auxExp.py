@@ -13,6 +13,7 @@ from data.mnist import mnist
 from models.aux_gssl2 import agssl
 from models.sdgssl import sdgssl
 from models.adgm import adgm
+from models.m2 import m2
 
 ### Script to run an experiment with generative SSL model ###
 
@@ -39,25 +40,28 @@ if dataset == 'moons':
     n_epochs = 100
     temperature_epochs = 99
     start_temp = 0.0  
+    alpha = 0.1
 
     verbose=1
     binarize = False
     logging = False
 
-
+elif dataset == 'mnist':
+    target = './data/mnist.pkl.gz'
     num_labeled, threshold = int(sys.argv[2]), float(noise)
-    labeled_batchsize, unlabeled_batchsize = 100,100
+    l_bs, u_bs = 100,100
     data = mnist(target, threshold=threshold)
     data.create_semisupervised(num_labeled)    
 
-    z_dim, a_dim = 100, 100
-    learning_rate = (3e-4,)
-    architecture = [500, 500]
-    n_epochs = 500
-    type_px = 'Bernoulli'
-    temperature_epochs, start_temp = None, 0.0
-    l2_reg = 0.0
-    batchnorm = False
+    n_z, n_a = 100, 100
+    lr = (5e-4,)
+    n_hidden = [500, 500]
+    n_epochs = 150
+    x_dist = 'Bernoulli'
+    temp_epochs, start_temp = None, 0.0
+    l2_reg = 1.0
+    batchnorm, mc_samps = True, 5
+    eval_samps = 1000
     binarize, logging = True, False
     verbose = 1
 
@@ -70,26 +74,22 @@ elif dataset == 'mnist':
     data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test, 
 		    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset=dataset, seed=seed)
 
+n_x, n_y = data.INPUT_DIM, data.NUM_CLASSES
 
-if modelName=='agssl':
+if modelName == 'agssl':
 	model = agssl(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
 			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
 			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
 			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 
-elif modelName=='sdgssl':
-	model = sdssl(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
-			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
-			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
-			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
+elif modelName == 'm2':
+	model = m2(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps)
 
-elif modelName=='adgm':
-	model = adgm(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
-			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
-			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
-			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
 
-model.fit(data)
+elif modelName == 'adgm':
+	model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm)
+		    
+model.train(data, n_epochs, l_bs, u_bs, lr, eval_samps=eval_samps, temp_epochs=temp_epochs, start_temp=start_temp, binarize=binarize, logging=logging, verbose=verbose)
 
 
 
@@ -137,11 +137,11 @@ if dataset=='mnist':
     print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
     ## t-sne visualization
-    cl = plt.cm.tab10(np.linspace(0,1,10))
-    test_labs = np.argmax(data.data['y_test'], 1)
-    z_test = model.encode_new(data.data['x_test'].astype('float32'))
-    np.save('./z_ssple', z_test)
-    np.save('./test_labs_sslpe', test_labs)
+    #cl = plt.cm.tab10(np.linspace(0,1,10))
+    #test_labs = np.argmax(data.data['y_test'], 1)
+    #z_test = model.encode_new(data.data['x_test'].astype('float32'))
+    #np.save('./z_ssple', z_test)
+    #np.save('./test_labs_sslpe', test_labs)
     #t = tsne(n_components=2, random_state=0)
     #print('Starting TSNE transform for latent encoding...')
     #sslpe_reduced = t.fit_transform(z_test)
