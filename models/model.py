@@ -116,10 +116,13 @@ class model(object):
 
 ################################################################
     
+    def weight_prior(self):
+	weights = [V for V in tf.trainable_variables() if 'W' in V.name]
+	return np.sum([tf.reduce_sum(dgm.standardNormalLogDensity(w)) for w in weights])
+
     def weight_regularization(self):
 	weights = [V for V in tf.trainable_variables() if 'W' in V.name]
 	return np.sum([tf.nn.l2_loss(w) for w in weights])	
-
 
     def data_init(self, Data, eval_samps):
 	self._process_data(Data, eval_samps)
@@ -141,8 +144,8 @@ class model(object):
 	if len(lr) == 1:
 	    return lr[0]
 	else:
-	    start_lr = lr[0]
-	    return tf.train.exponential_decay(start_lr, self.global_step, lr[1], 0.96)     
+	    start_lr, rate, final_lr = lr
+	    return tf.train.polynomial_decay(start_lr, self.global_step, rate, end_learning_rate=final_lr)     
 
 
     def _process_data(self, data, eval_samps):

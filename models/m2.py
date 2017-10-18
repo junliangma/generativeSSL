@@ -51,16 +51,15 @@ class m2(model):
 	self.elbo_l = tf.reduce_mean(self.labeled_loss(self.x_l, self.y_l))
 	self.qy_ll = tf.reduce_mean(self.qy_loss(self.x_l, self.y_l))
 	self.elbo_u = tf.reduce_mean(self.unlabeled_loss(self.x_u))
-	weight_priors = self.weight_regularization()/4000
-	return -(self.elbo_l + self.elbo_u + self.alpha * self.qy_ll -  weight_priors)
+	#weight_priors = -self.weight_regularization()/5000
+	weight_priors = self.l2_reg*self.weight_prior()/self.n_train	
+	return -(self.elbo_l + self.elbo_u + self.alpha * self.qy_ll + weight_priors)
 
     def labeled_loss(self, x, y):
 	z_m, z_lv, z = self.sample_z(x,y)
-	l_px = self.compute_logpx(x,y,z)
-	l_py = tf.tile(tf.expand_dims(dgm.multinoulliUniformLogDensity(y),0),[self.mc_samples,1])
-	l_pz = dgm.standardNormalLogDensity(z)
-	l_qz = dgm.gaussianLogDensity(z, z_m, z_lv)
-	return tf.reduce_mean(l_px + l_py + l_pz - l_qz, axis=0)
+	x_ = tf.tile(tf.expand_dims(x, 0), [self.mc_samples, 1,1])
+	y_ = tf.tile(tf.expand_dims(y,0),[self.mc_samples,1,1])
+	return self.lowerBound(x_, y_, z, z_m, z_lv) 
 
     def unlabeled_loss(self, x):
 	qy_l = self.predict(x)
@@ -72,6 +71,14 @@ class m2(model):
 	qy_entropy = -tf.reduce_sum(qy_l * tf.log(qy_l + 1e-10), axis=-1)
 	return lb_u + qy_entropy
 
+    def lowerBound(self, x, y, z, z_m, z_lv):
+	""" Compute densities and lower bound given all inputs (mc_samps X n_obs X n_dim) """
+	l_px = self.compute_logpx(x,y,z)
+	l_py = dgm.multinoulliUniformLogDensity(y)
+	l_pz = dgm.standardNormalLogDensity(z)
+	l_qz = dgm.gaussianLogDensity(z, z_m, z_lv)
+	return tf.reduce_mean(l_px + l_py + l_pz - l_qz, axis=0)
+	
     def qy_loss(self, x, y):
         y_ = dgm.forwardPassCatLogits(x, self.qy_x, self.n_hid, self.nonlinearity, self.bn, scope='qy_x')
         return dgm.multinoulliLogDensity(y, y_)
@@ -81,16 +88,15 @@ class m2(model):
         return dgm.samplePassGauss(l_qz_in, self.qz_xy, self.n_hid, self.nonlinearity, self.bn, mc_samps=self.mc_samples,  scope='qz_xy')
 
     def compute_logpx(self, x, y, z):
-	px_in = tf.reshape(tf.concat([tf.tile(tf.expand_dims(y,0), [self.mc_samples, 1,1]),z], axis=-1), [-1, self.n_y+self.n_z])
-	x_ = tf.tile(tf.expand_dims(x, 0), [self.mc_samples, 1,1])
+	px_in = tf.reshape(tf.concat([y,z], axis=-1), [-1, self.n_y+self.n_z])
 	if self.x_dist == 'Gaussian':
             mean, log_var = dgm.forwardPassGauss(px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz')
 	    mean, log_var = tf.reshape(mean, [self.mc_samples, -1, self.n_x]),  tf.reshape(log_var, [self.mc_samples, -1, self.n_x])
-            return dgm.gaussianLogDensity(x_, mean, log_var)
+            return dgm.gaussianLogDensity(x, mean, log_var)
         elif self.x_dist == 'Bernoulli':
             logits = dgm.forwardPassCatLogits(px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz')
 	    logits = tf.reshape(logits, [self.mc_samples, -1, self.n_x])
-            return dgm.bernoulliLogDensity(x_, logits) 
+            return dgm.bernoulliLogDensity(x, logits) 
 
     def predict(self, x):
 	""" predict y for given x with q(y|x) """
