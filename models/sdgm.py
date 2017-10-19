@@ -14,19 +14,19 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 
 """ 
-Implementation of auxiliary DGMs from Maaloe et al. (2016): p(z) * p(y) * p(x|y,z) * p(a|z,y,x)
+Implementation of skip DGMs from Maaloe et al. (2016): p(z) * p(y) * p(a|z,y) * p(x|,y,z,a)
 Inference network: q(a,z,y|x) = q(a|x) * q(y|a,x) * q(z|a,y,x) 
 """
 
-class adgm(model):
+class sdgm(model):
    
     def __init__(self, n_x, n_y, n_z=2, n_a=2, n_hid=[4], alpha=0.1, x_dist='Gaussian', nonlinearity=tf.nn.relu, batchnorm=False, mc_samples=1, l2_reg=1.0, ckpt=None):
 	
 	self.n_a = n_a        # auxiliary variable dimension
-   	super(adgm, self).__init__(n_x, n_y, n_z, n_hid, x_dist, nonlinearity, batchnorm, mc_samples, alpha, l2_reg, ckpt)	
+   	super(sdgm, self).__init__(n_x, n_y, n_z, n_hid, x_dist, nonlinearity, batchnorm, mc_samples, alpha, l2_reg, ckpt)	
 
 	""" TODO: add any general terms we want to have here """
-	self.name = 'adgm'
+	self.name = 'sdgm'
 
     def build_model(self):
 	""" Define model components and variables """
@@ -43,13 +43,14 @@ class adgm(model):
 	self.z_ = tf.reshape(self.z_, [-1, self.n_z])
 	# generative #
 	self.z_prior = tf.random_normal([100, self.n_z])
-	self.px_in = tf.concat([self.y, self.z_prior], axis=-1)
+	self.pa_in = tf.concat([self.y, self.z_], axis=-1)
+	self.pa_mean, self.pa_lv, self.pa_ = dgm.samplePassGauss(self.pa_in, self.pa_yz, self.n_hid, self.nonlinearity, self.bn, scope='pa_yz', reuse=False)
+	self.pa_ = tf.reshape(self.pa_, [-1, self.n_a])	
+	self.px_in = tf.concat([self.y, self.z_prior, self.pa_], axis=-1)
         if self.x_dist == 'Gaussian':
-            self.px_mean, self.px_lv, self.x_ = dgm.samplePassGauss(self.px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz', reuse=False)
+            self.px_mean, self.px_lv, self.x_ = dgm.samplePassGauss(self.px_in, self.px_yza, self.n_hid, self.nonlinearity, self.bn, scope='px_yza', reuse=False)
         elif self.x_dist == 'Bernoulli':
-            self.x_ = dgm.forwardPassBernoulli(self.px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz', reuse=False)
-	self.pa_in = tf.concat([self.x, self.y, self.z_], axis=-1)
-	self.pa_mean, self.pa_lv, self.pa_ = dgm.samplePassGauss(self.pa_in, self.pa_xyz, self.n_hid, self.nonlinearity, self.bn, scope='pa_xyz', reuse=False)
+            self.x_ = dgm.forwardPassBernoulli(self.px_in, self.px_yza, self.n_hid, self.nonlinearity, self.bn, scope='px_yza', reuse=False)
 	self.predictions = self.predict(self.x)
 	
     def compute_loss(self):
@@ -74,7 +75,7 @@ class adgm(model):
 	qa_m, qa_lv, a = self.sample_a(x)
 	qy_l = self.predict(x,a)
 	x_r, a_r = tf.tile(x, [self.n_y,1]), tf.tile(a, [1,self.n_y,1])
-	qa_mr, qa_lvr = tf.tile(tf.expand_dims(qa_m,0), [1,self.n_y,1]), tf.tile(tf.expand_dims(qa_lv,0), [1,self.n_y,1])
+ 	qa_mr, qa_lvr = tf.tile(tf.expand_dims(qa_m,0), [1,self.n_y,1]), tf.tile(tf.expand_dims(qa_lv,0), [1,self.n_y,1])
         y_u = tf.reshape(tf.tile(tf.eye(self.n_y), [1, tf.shape(self.x_u)[0]]), [-1, self.n_y])
 	z_m, z_lv, z = self.sample_z(x_r, y_u, a_r)
 	x_ = tf.tile(tf.expand_dims(x_r,0), [self.mc_samples, 1,1])
@@ -87,9 +88,9 @@ class adgm(model):
 
     def lowerBound(self, x, y, z, z_m, z_lv, a, qa_m, qa_lv):
 	""" Helper function for loss computations. Assumes each input is a rank(3) tensor """
-	pa_in = tf.reshape(tf.concat([x, y, z], axis=-1), [-1, self.n_x + self.n_y + self.n_z])
-	pa_m, pa_lv = dgm.forwardPassGauss(pa_in, self.pa_xyz, self.n_hid, self.nonlinearity, self.bn, scope='pa_xyz')
-	l_px = self.compute_logpx(x,y,z)
+	pa_in = tf.reshape(tf.concat([y, z], axis=-1), [-1,self.n_y + self.n_z])
+	pa_m, pa_lv = dgm.forwardPassGauss(pa_in, self.pa_yz, self.n_hid, self.nonlinearity, self.bn, scope='pa_yz')
+	l_px = self.compute_logpx(x,y,z,a)
 	l_py = dgm.multinoulliUniformLogDensity(y)
 	l_pz = dgm.standardNormalLogDensity(z)
 	l_pa = dgm.gaussianLogDensity(a, pa_m, pa_lv)
@@ -117,14 +118,15 @@ class adgm(model):
 	z = tf.reshape(z, [self.mc_samples,-1,self.n_z])
 	return z_m, z_lv, z
 
-    def compute_logpx(self, x, y, z):
-        px_in = tf.reshape(tf.concat([y,z], axis=-1), [-1, self.n_y+self.n_z])
+    def compute_logpx(self, x, y, z, a):
+	""" compute the log density of x under p(x|y,z,a) """
+        px_in = tf.reshape(tf.concat([y,z,a], axis=-1), [-1, self.n_y + self.n_z+ self.n_a])
         if self.x_dist == 'Gaussian':
-            mean, log_var = dgm.forwardPassGauss(px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz')
+            mean, log_var = dgm.forwardPassGauss(px_in, self.px_yza, self.n_hid, self.nonlinearity, self.bn, scope='px_yza')
             mean, log_var = tf.reshape(mean, [self.mc_samples, -1, self.n_x]),  tf.reshape(log_var, [self.mc_samples, -1, self.n_x])
             return dgm.gaussianLogDensity(x, mean, log_var)
         elif self.x_dist == 'Bernoulli':
-            logits = dgm.forwardPassCatLogits(px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz')
+            logits = dgm.forwardPassCatLogits(px_in, self.px_yza, self.n_hid, self.nonlinearity, self.bn, scope='px_yza')
             logits = tf.reshape(logits, [self.mc_samples, -1, self.n_x])
             return dgm.bernoulliLogDensity(x, logits)
 
@@ -154,10 +156,10 @@ class adgm(model):
     def initialize_networks(self):
     	""" Initialize all model networks """
 	if self.x_dist == 'Gaussian':
-      	    self.px_yz = dgm.initGaussNet(self.n_y+self.n_z, self.n_hid, self.n_x, 'px_yz_')
+      	    self.px_yza = dgm.initGaussNet(self.n_y+self.n_z+self.n_a, self.n_hid, self.n_x, 'px_yza_')
 	elif self.x_dist == 'Bernoulli':
-	    self.px_yz = dgm.initCatNet(self.n_y+self.n_z, self.n_hid, self.n_x, 'px_yz_')
-	self.pa_xyz = dgm.initGaussNet(self.n_x+self.n_y+self.n_z, self.n_hid, self.n_a, 'pa_xyz_') 
+	    self.px_yza = dgm.initCatNet(self.n_y+self.n_z+self.n_a, self.n_hid, self.n_x, 'px_yza_')
+	self.pa_yz = dgm.initGaussNet(self.n_y+self.n_z, self.n_hid, self.n_a, 'pa_yz_') 
     	self.qz_xya = dgm.initGaussNet(self.n_x+self.n_y+self.n_a, self.n_hid, self.n_z, 'qz_xya_')
     	self.qa_x = dgm.initGaussNet(self.n_x, self.n_hid, self.n_a, 'qa_x_')
     	self.qy_xa = dgm.initCatNet(self.n_x+self.n_a, self.n_hid, self.n_y, 'qy_xa_')

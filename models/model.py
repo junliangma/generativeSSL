@@ -41,10 +41,17 @@ class model(object):
 	self.lr = self.set_learning_rate(lr)
 	self.schedule = self.set_schedule(temp_epochs, start_temp, n_epochs)
 	self.beta = tf.Variable(self.schedule[0], trainable=False, name='beta')
-        ## define optimizer 
+        ## define optimizer
+	optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
+	gvs = optimizer.compute_gradients(self.loss)
+	capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
 	update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 	with tf.control_dependencies(update_ops):
-            self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
+	    self.optimizer = optimizer.apply_gradients(capped_gvs, global_step=self.global_step) 
+	
+	#update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+	#with tf.control_dependencies(update_ops):
+        #    self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
 
 	self.train_acc = self.compute_acc(self.x_train, self.y_train)
 	self.test_acc = self.compute_acc(self.x_test, self.y_test)

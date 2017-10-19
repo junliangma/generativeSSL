@@ -51,7 +51,6 @@ class m2(model):
 	self.elbo_l = tf.reduce_mean(self.labeled_loss(self.x_l, self.y_l))
 	self.qy_ll = tf.reduce_mean(self.qy_loss(self.x_l, self.y_l))
 	self.elbo_u = tf.reduce_mean(self.unlabeled_loss(self.x_u))
-	#weight_priors = -self.weight_regularization()/5000
 	weight_priors = self.l2_reg*self.weight_prior()/self.n_train	
 	return -(self.elbo_l + self.elbo_u + self.alpha * self.qy_ll + weight_priors)
 
@@ -63,10 +62,10 @@ class m2(model):
 
     def unlabeled_loss(self, x):
 	qy_l = self.predict(x)
-	x_tiled = tf.tile(x, [self.n_y,1])
+	x_r = tf.tile(x, [self.n_y,1])
 	y_u = tf.reshape(tf.tile(tf.eye(self.n_y), [1, tf.shape(self.x_u)[0]]), [-1, self.n_y])
 	n_u = tf.shape(x)[0] 
-	lb_u = tf.transpose(tf.reshape(self.labeled_loss(x_tiled, y_u), [self.n_y, n_u]))
+	lb_u = tf.transpose(tf.reshape(self.labeled_loss(x_r, y_u), [self.n_y, n_u]))
 	lb_u = tf.reduce_sum(qy_l * lb_u, axis=-1)
 	qy_entropy = -tf.reduce_sum(qy_l * tf.log(qy_l + 1e-10), axis=-1)
 	return lb_u + qy_entropy
