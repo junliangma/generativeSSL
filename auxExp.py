@@ -10,10 +10,9 @@ from sklearn.manifold import TSNE as tsne
 import tensorflow as tf
 from data.SSL_DATA import SSL_DATA
 from data.mnist import mnist
-from models.aux_gssl2 import agssl
-from models.sdgssl import sdgssl
 from models.adgm import adgm
 from models.m2 import m2
+from models.sdgm import sdgm
 
 ### Script to run an experiment with generative SSL model ###
 
@@ -52,15 +51,16 @@ elif dataset == 'mnist':
     l_bs, u_bs = 100,100
     data = mnist(target, threshold=threshold)
     data.create_semisupervised(num_labeled)    
+    epoch2steps = data.n_train/u_bs
 
     n_z, n_a = 100, 100
-    lr = (5e-4,)
+    lr = (3e-4,50*epoch2steps, 3e-5)
     n_hidden = [500, 500]
-    n_epochs = 150
+    n_epochs = 200
     x_dist = 'Bernoulli'
     temp_epochs, start_temp = None, 0.0
-    l2_reg = 1.0
-    batchnorm, mc_samps = True, 5
+    l2_reg = .05
+    batchnorm, mc_samps = True, 1
     eval_samps = 1000
     binarize, logging = True, False
     verbose = 1
@@ -76,19 +76,15 @@ elif dataset == 'mnist':
 
 n_x, n_y = data.INPUT_DIM, data.NUM_CLASSES
 
-if modelName == 'agssl':
-	model = agssl(Z_DIM=z_dim, A_DIM=a_dim, LEARNING_RATE=learning_rate, NUM_HIDDEN=architecture, ALPHA=0.1, 
-			BINARIZE=binarize, temperature_epochs=temperature_epochs, start_temp=start_temp, eval_samps=2000,
-			l2_reg=l2_reg, BATCHNORM=batchnorm, LABELED_BATCH_SIZE=labeled_batchsize, UNLABELED_BATCH_SIZE=unlabeled_batchsize, 
-			verbose=verbose, NUM_EPOCHS=n_epochs, TYPE_PX=type_px, logging=logging)
-
-elif modelName == 'm2':
-	model = m2(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps)
-
+if modelName == 'm2':
+	model = m2(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 'adgm':
-	model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm)
+	model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 		    
+elif modelName == 'sdgm':
+	model = sdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+
 model.train(data, n_epochs, l_bs, u_bs, lr, eval_samps=eval_samps, temp_epochs=temp_epochs, start_temp=start_temp, binarize=binarize, logging=logging, verbose=verbose)
 
 
