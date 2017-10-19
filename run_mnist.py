@@ -14,43 +14,39 @@ from models.m2 import m2
 from models.adgm import adgm
 from models.sdgm import sdgm
 
-### Script to run an experiment with generative SSL model ###
+### Script to run an MNIST experiment with generative SSL models ###
 
 ## argv[1] - proportion of training data labeled (or for mnist, number of labels from each class)
 ## argv[2] - Dataset seed
 ## argv[3] - noise level in moons dataset / Threshold for reduction in mnist
-## argv[4] - model to use (adgm, adgssl, sdgssl)
+## argv[4] - model to use (m2, adgm, sdgm, sslpe, a_sslpe, s_sslpe)
 
-
-dataset, noise = mnist, sys.argv[3]
+# Experiment parameters
+num_labeled, threshold = int(sys.argv[1]), float(sys.argv[3])
 seed = int(sys.argv[2])
 modelName = sys.argv[4]
-
-
+# Load and conver data to relevant type
 target = './data/mnist.pkl.gz'
-num_labeled, threshold = int(sys.argv[1]), float(noise)
 l_bs, u_bs = 100,100
 data = mnist(target, threshold=threshold)
-data.create_semisupervised(num_labeled)    
-epoch2steps = data.n_train/u_bs
+data.create_semisupervised(num_labeled)
+data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test, 
+	    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset='mnist', seed=seed)
+n_x, n_y = data.INPUT_DIM, data.NUM_CLASSES
 
-epochDecay = 50
-n_z, n_a = 100, 100
+# Specify model parameters
+epoch2steps, epoch_decay = data.n_train/u_bs, 50
 lr = (3e-4,epochDecay*epoch2steps, 3e-5)
+n_z, n_a = 100, 100
 n_hidden = [500, 500]
 n_epochs = 200
 x_dist = 'Bernoulli'
 temp_epochs, start_temp = None, 0.0
-l2_reg = .01
+l2_reg = .08
 batchnorm, mc_samps = True, 1
 eval_samps = 1000
-binarize, logging = True, False
-verbose = 1
+binarize, logging, verbose = True, False, 1
 
-
-data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test, 
-	    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset=dataset, seed=seed)
-n_x, n_y = data.INPUT_DIM, data.NUM_CLASSES
 
 if modelName == 'm2':
     model = m2(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
@@ -69,28 +65,30 @@ elif modelName == 'sslapd':
     print('Not implemented yet')
     sys.exit()
 	
+# Train model and measure performance on test set
 model.train(data, n_epochs, l_bs, u_bs, lr, eval_samps=eval_samps, temp_epochs=temp_epochs, start_temp=start_temp, binarize=binarize, logging=logging, verbose=verbose)
 
 preds_test = model.predict_new(data.data['x_test'].astype('float32'))
 acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
 print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
+""" Additional (optional) fancy generative model performance things
 ## t-sne visualization
-#cl = plt.cm.tab10(np.linspace(0,1,10))
-#test_labs = np.argmax(data.data['y_test'], 1)
-#z_test = model.encode_new(data.data['x_test'].astype('float32'))
-#np.save('./z_ssple', z_test)
-#np.save('./test_labs_sslpe', test_labs)
-#t = tsne(n_components=2, random_state=0)
-#print('Starting TSNE transform for latent encoding...')
-#sslpe_reduced = t.fit_transform(z_test)
-#print('Done with TSNE transformations...')
-#plt.figure(figsize=(8,10), frameon=False)
-#for digit in range(10):
-#    indices = np.where(test_labs==digit)[0]
-#    plt.scatter(sslpe_reduced[indices, 0], sslpe_reduced[indices, 1], c=cl[digit], label='Digit: '+str(digit))
-#plt.legend()
-#plt.savefig('mnist_samps/sslpe_encode', bbox_inches='tight')
+cl = plt.cm.tab10(np.linspace(0,1,10))
+test_labs = np.argmax(data.data['y_test'], 1)
+z_test = model.encode_new(data.data['x_test'].astype('float32'))
+np.save('./z_ssple', z_test)
+np.save('./test_labs_sslpe', test_labs)
+t = tsne(n_components=2, random_state=0)
+print('Starting TSNE transform for latent encoding...')
+sslpe_reduced = t.fit_transform(z_test)
+print('Done with TSNE transformations...')
+plt.figure(figsize=(8,10), frameon=False)
+for digit in range(10):
+    indices = np.where(test_labs==digit)[0]
+    plt.scatter(sslpe_reduced[indices, 0], sslpe_reduced[indices, 1], c=cl[digit], label='Digit: '+str(digit))
+plt.legend()
+plt.savefig('mnist_samps/sslpe_encode', bbox_inches='tight')
 
 # plot n_samps x n_samps grid of random samples
 if threshold < 0.0:
@@ -118,5 +116,4 @@ if threshold < 0.0:
     plt.tight_layout()
     plt.savefig('./mnist_samps/sslpe_'+str(num_labeled)+'_samps_white', bbox_inches='tight')
     plt.close()
-
-
+"""
