@@ -13,6 +13,8 @@ from data.mnist import mnist
 from models.m2 import m2
 from models.adgm import adgm
 from models.sdgm import sdgm
+from models.sslpev2 import sslpe
+from models.skip_sslpe import skip_sslpe
 
 ### Script to run an MNIST experiment with generative SSL models ###
 
@@ -30,20 +32,20 @@ target = './data/mnist.pkl.gz'
 l_bs, u_bs = 100,100
 data = mnist(target, threshold=threshold)
 data.create_semisupervised(num_labeled)
+epoch2steps, epoch_decay = data.n_train/u_bs, 50
 data = SSL_DATA(data.x_unlabeled, data.y_unlabeled, x_test=data.x_test, y_test=data.y_test, 
 	    x_labeled=data.x_labeled, y_labeled=data.y_labeled, dataset='mnist', seed=seed)
 n_x, n_y = data.INPUT_DIM, data.NUM_CLASSES
 
 # Specify model parameters
-epoch2steps, epoch_decay = data.n_train/u_bs, 50
-lr = (3e-4,epochDecay*epoch2steps, 3e-5)
+lr = (3e-4,)
 n_z, n_a = 100, 100
 n_hidden = [500, 500]
 n_epochs = 200
 x_dist = 'Bernoulli'
 temp_epochs, start_temp = None, 0.0
-l2_reg = .08
-batchnorm, mc_samps = True, 1
+l2_reg = 0.1
+batchnorm, mc_samps = False, 1
 eval_samps = 1000
 binarize, logging, verbose = True, False, 1
 
@@ -58,8 +60,10 @@ elif modelName == 'sdgm':
     model = sdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 'sslpe':
-    print('Not implemented yet')
-    sys.exit()
+    model = sslpe(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+
+elif modelName == 's_sslpe':
+    model = skip_sslpe(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 'sslapd':
     print('Not implemented yet')
