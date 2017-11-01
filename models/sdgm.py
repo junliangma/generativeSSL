@@ -102,7 +102,7 @@ class sdgm(model):
 	l_qa = dgm.gaussianLogDensity(a, qa_m, qa_lv)
 	return tf.reduce_mean(l_px + l_py + l_pz + l_pa - l_qz - l_qa, axis=0)	
 
-    def qy_term(self, x, y, a=None):
+    def qy_term(self, x, y, a):
 	""" expected additional penalty under q(y|a,x) with samples from a"""
 	qy_in = tf.reshape(tf.concat([x, a], axis=-1), [-1, self.n_x+self.n_a])
 	y_ = tf.reshape(dgm.forwardPassCatLogits(qy_in, self.qy_xa, self.n_hid, self.nonlinearity, self.bn, True, 'qy_xa'), [self.mc_samples,-1,self.n_y])
