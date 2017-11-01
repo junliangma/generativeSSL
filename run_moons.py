@@ -47,11 +47,11 @@ n_x, n_y = data.INPUT_DIM, data.NUM_CLASSES
 lr = (3e-4,)
 n_z, n_a = 10, 10
 n_hidden = [100, 100]
-n_epochs = 35
+n_epochs = 15
 x_dist = 'Gaussian'
 temp_epochs, start_temp = None, 0.0
-l2_reg, initVar = 1., -8.0
-batchnorm, mc_samps = True, 1
+l2_reg, initVar = 1., -8.0	
+batchnorm, mc_samps = True, 10
 alpha, eval_samps = 2., None
 binarize, logging, verbose = False, False, 1
 
@@ -62,7 +62,7 @@ if modelName == 'm2':
 
 elif modelName == 'adgm':
     # auxiliary DGM: Maaloe et al. (2016)
-    model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+    model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 		    
 elif modelName == 'sdgm':
     # skip DGM: Maaloe et al. (2016)
@@ -70,7 +70,7 @@ elif modelName == 'sdgm':
 
 elif modelName == 'msdgm':
     # modified sdgm (copied classifier p(y|x,a)
-    model = msdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+    model = msdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 'sslpe':
     # sslpe: Gordon and Hernandez-Lobato (2017)
@@ -132,3 +132,29 @@ xl,yl = data.data['x_l'], data.data['y_l']
 plt.scatter(xl[:,0],xl[:,1], color='black')
 plt.show()
 
+if modelName == 'msdgm':
+    predictions = model.predict_q_new(xy.astype('float32'))
+    
+    zi = np.zeros(X.shape)
+    for i, row_val in enumerate(range_x):
+        for j, col_val in enumerate(range_y):
+            idx = np.intersect1d(np.where(np.isclose(xy[:,0],row_val))[0],np.where(np.isclose(xy[:,1],col_val))[0])
+            zi[i,j] = predictions[idx[0],0] * 100
+    
+    plt.figure()
+    plt.contourf(X,Y,zi,cmap=plt.cm.coolwarm)
+    print('Done with heat map')
+    
+    preds_test = model.predict_q_new(data.data['x_test'].astype('float32'))
+    ll_test = -log_loss(data.data['y_test'], preds_test)
+    print('Final Test Log Likelihood: {:5.3f}'.format(ll_test))
+     
+    preds = np.argmax(preds_test, axis=1)
+    x0, x1 = data.data['x_test'][np.where(preds==0)], data.data['x_test'][np.where(preds==1)]
+    
+    plt.scatter(x0[:,0], x0[:,1], color='g', s=1)
+    plt.scatter(x1[:,0], x1[:,1], color='m', s=1)
+    
+    xl,yl = data.data['x_l'], data.data['y_l']
+    plt.scatter(xl[:,0],xl[:,1], color='black')
+    plt.show()

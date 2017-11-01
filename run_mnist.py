@@ -13,15 +13,15 @@ from data.mnist import mnist
 from models.m2 import m2
 from models.adgm import adgm
 from models.sdgm import sdgm
-from models.sslpev2 import sslpe
-from models.skip_sslpe import skip_sslpe
+from models.msdgm import msdgm
+from models.bsdgm import bsdgm
 
 ### Script to run an MNIST experiment with generative SSL models ###
 
 ## argv[1] - proportion of training data labeled (or for mnist, number of labels from each class)
 ## argv[2] - Dataset seed
 ## argv[3] - noise level in moons dataset / Threshold for reduction in mnist
-## argv[4] - model to use (m2, adgm, sdgm, sslpe, a_sslpe, s_sslpe)
+## argv[4] - model to use (m2, adgm, sdgm, sslpe, b_sdgm, msdgm)
 
 # Experiment parameters
 num_labeled, threshold = int(sys.argv[1]), float(sys.argv[3])
@@ -44,31 +44,41 @@ n_hidden = [500, 500]
 n_epochs = 200
 x_dist = 'Bernoulli'
 temp_epochs, start_temp = None, 0.0
-l2_reg = 0.1
-batchnorm, mc_samps = False, 1
+l2_reg, initVar, alpha = .05, -8, 0.1
+batchnorm, mc_samps = True, 5
 eval_samps = 1000
 binarize, logging, verbose = True, False, 1
 
 
 if modelName == 'm2':
+    # standard M2: Kingma et al. (2014)
     model = m2(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 'adgm':
-    model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+    # auxiliary DGM: Maaloe et al. (2016)
+    model = adgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 		    
 elif modelName == 'sdgm':
-    model = sdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+    # skip DGM: Maaloe et al. (2016)
+    model = sdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+
+elif modelName == 'msdgm':
+    # modified sdgm (copied classifier p(y|x,a)
+    model = msdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 'sslpe':
+    # sslpe: Gordon and Hernandez-Lobato (2017)
     model = sslpe(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
 elif modelName == 's_sslpe':
+    # skip sslpe: unpublished
     model = skip_sslpe(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
-elif modelName == 'sslapd':
-    print('Not implemented yet')
-    sys.exit()
+elif modelName == 'b_sdgm':
+    # SDGM with Bayesian additional classifier: unpublished
+    model = bsdgm(n_x, n_y, n_z, n_a, n_hidden, initVar=initVar, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 	
+
 # Train model and measure performance on test set
 model.train(data, n_epochs, l_bs, u_bs, lr, eval_samps=eval_samps, temp_epochs=temp_epochs, start_temp=start_temp, binarize=binarize, logging=logging, verbose=verbose)
 
