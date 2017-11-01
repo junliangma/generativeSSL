@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import sys, os, pdb
-
+import matplotlib.pyplot as plt
 import numpy as np
 import utils.dgm as dgm
 
@@ -37,7 +37,7 @@ class model(object):
 
     def train(self, Data, n_epochs, l_bs, u_bs, lr, eval_samps=None, temp_epochs=None, start_temp=0.0, binarize=False, logging=False, verbose=1):
 	""" Method for training the models """
-	self.data_init(Data, eval_samps)
+	self.data_init(Data, eval_samps, l_bs, u_bs)
 	self.lr = self.set_learning_rate(lr)
 	self.schedule = self.set_schedule(temp_epochs, start_temp, n_epochs)
 	self.beta = tf.Variable(self.schedule[0], trainable=False, name='beta')
@@ -52,7 +52,8 @@ class model(object):
 	#update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 	#with tf.control_dependencies(update_ops):
         #    self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
-
+	
+	self.compute_accuracies()
 	self.train_acc = self.compute_acc(self.x_train, self.y_train)
 	self.test_acc = self.compute_acc(self.x_test, self.y_test)
 
@@ -131,8 +132,8 @@ class model(object):
 	weights = [V for V in tf.trainable_variables() if 'W' in V.name]
 	return np.sum([tf.nn.l2_loss(w) for w in weights])	
 
-    def data_init(self, Data, eval_samps):
-	self._process_data(Data, eval_samps)
+    def data_init(self, Data, eval_samps, l_bs, u_bs):
+	self._process_data(Data, eval_samps, l_bs, u_bs)
 
     def binarize(self, x):
 	return np.random.binomial(1,x)
@@ -155,7 +156,7 @@ class model(object):
 	    return tf.train.polynomial_decay(start_lr, self.global_step, rate, end_learning_rate=final_lr)     
 
 
-    def _process_data(self, data, eval_samps):
+    def _process_data(self, data, eval_samps, l_bs, u_bs):
         """ Extract relevant information from data_gen """
         self.n = data.N
         self.n_train = data.TRAIN_SIZE         # training set size
@@ -170,7 +171,7 @@ class model(object):
         self.n_u = data.NUM_UNLABELED          # number of unlabeled instances
         self.data_name = data.NAME             # dataset being used   
         self._allocate_directory()             # logging directory
-        self.alpha = self.alpha * (self.n/self.n_l)     # weighting for additional term
+        self.alpha *= self.n_train/self.n_l    # weighting for additional term
 
 
     def create_placeholders(self):
@@ -185,6 +186,10 @@ class model(object):
         self.y_test = tf.placeholder(tf.float32, shape=[None, self.n_y], name='y_test')
         self.y = tf.placeholder(tf.float32, shape=[None, self.n_y], name='y')
 	self.phase = True 
+
+    def compute_accuracies(self):
+        self.train_acc = self.compute_acc(self.x_train, self.y_train)
+	self.test_acc = self.compute_acc(self.x_test, self.y_test)
 
     def _printing_feed_dict(self, Data, x_l, x_u, y, eval_samps, binarize):
 	x_train, y_train = Data.sample_train(eval_samps)
