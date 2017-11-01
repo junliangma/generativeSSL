@@ -12,7 +12,10 @@ import pdb
 
 """ Module containing shared functions and structures for DGMS """
 
-############# (log) Density functions ##############
+glorotNormal = xavier_initializer(uniform=False)
+initNormal = tf.random_normal_initializer(stddev=1e-3)
+
+############# Probability functions ##############
 
 def gaussianLogDensity(inputs, mu, log_var):
     """ Gaussian log density """
@@ -40,7 +43,14 @@ def multinoulliUniformLogDensity(inputs):
     logits = tf.ones_like(inputs)
     return -tf.nn.softmax_cross_entropy_with_logits(labels=inputs, logits=logits)
 
+def sampleNormal(mu, logvar):
+    """ return a reparameterized sample from a Gaussian distribution """
+    eps = tf.random_normal(mu.get_shape(), dtype=tf.float32)
+    return mu + eps * tf.sqrt(tf.exp(logvar))
 
+def standardNormalKL(mu, logvar):
+    """ compute the KL divergence between a Gaussian and standard normal """
+    return -0.5 * tf.reduce_sum(1 + logvar - mu**2 - tf.exp(logvar), axis=-1)
 
 ############## Neural Network modules ##############
 
@@ -49,26 +59,26 @@ def initNetwork(n_in, n_hid, n_out, vname):
     for layer, neurons in enumerate(n_hid):
         weight_name, bias_name = 'W'+str(layer), 'b'+str(layer)
         if layer == 0:
-       	    weights[weight_name] = tf.get_variable(shape=[n_in, n_hid[layer]], name=vname+weight_name, initializer=xavier_initializer())
+       	    weights[weight_name] = tf.get_variable(shape=[n_in, n_hid[layer]], name=vname+weight_name, initializer=glorotNormal)
     	else:
-    	    weights[weight_name] = tf.get_variable(shape=[n_hid[layer-1], n_hid[layer]], name=vname+weight_name, initializer=xavier_initializer(uniform=False))
-    	weights[bias_name] = tf.Variable(tf.zeros(n_hid[layer]) + 1e-1, name=vname+bias_name)
+    	    weights[weight_name] = tf.get_variable(shape=[n_hid[layer-1], n_hid[layer]], name=vname+weight_name, initializer=glorotNormal)
+    	weights[bias_name] = tf.get_variable(shape=[n_hid[layer]], name=vname+bias_name, initializer=initNormal)
     return weights
 
 def initGaussNet(n_in, n_hid, n_out, vname):
     """ Initialize the weights of a network parameterizeing a Gaussian distribution"""
     weights = initNetwork(n_in, n_hid, n_out, vname)
-    weights['Wmean'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wmean', initializer=xavier_initializer(uniform=False))
-    weights['bmean'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bmean')
-    weights['Wvar'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wvar', initializer=xavier_initializer(uniform=False))
-    weights['bvar'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bvar')
+    weights['Wmean'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wmean', initializer=initNormal)
+    weights['bmean'] = tf.get_variable(shape=[n_out], name=vname+'bmean', initializer=initNormal)
+    weights['Wvar'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wvar', initializer=initNormal)
+    weights['bvar'] = tf.get_variable(shape=[n_out], name=vname+'bvar', initializer=initNormal)
     return weights
 
 def initCatNet(n_in, n_hid, n_out, vname):
     """ Initialize the weights of a network parameterizeing a Gaussian distribution"""
     weights = initNetwork(n_in, n_hid, n_out, vname)
-    weights['Wout'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wout', initializer=xavier_initializer(uniform=False))
-    weights['bout'] = tf.Variable(tf.zeros([n_out]) + 1e-1, name=vname+'bout')
+    weights['Wout'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wout', initializer=initNormal)
+    weights['bout'] = tf.get_variable(shape=[n_out], name=vname+'bout', initializer=initNormal)
     return weights
 
 def forwardPass(x, weights, n_h, nonlinearity, bn, training, scope, reuse):
@@ -113,44 +123,115 @@ def forwardPassBernoulli(x, weights, n_h, nonlinearity, bn=False, training=True,
 
 ############## Bayesian Neural Network modules ############## 
 
-def _forward_pass_Cat_logits_bnn(x, weights, q, n_h, nonlinearity, bn, training):
-    """ Forward pass through a BNN and variational approximation with weights as dictionaries """
-    h = x
-    for layer, neurons in enumerate(n_h):
-    	weight_name, bias_name = 'W'+str(layer), 'b'+str(layer)
-    	weight_mean, bias_mean = 'W'+str(layer)+'_mean', 'b'+str(layer)+'_mean'
-	htilde = tf.matmul(h, q[weight_mean]) + q[bias_mean]
-	h = tf.matmul(h, weights[weight_name]) + weights[bias_name]
-	if bn:
-	    h = bayes_batch_norm(h, htilde, weights, q, layer, training)
-        h = nonlinearity(h)
-    logits = tf.matmul(h, weights['Wout']) + weights['bout']
-    return logits
-
-def _init_Cat_bnn(n_in, architecture, n_out, vname, initVar=-5):
+def initBNN(n_in, n_hid, n_out, initVar, vname):
+    """ initialize the weights that define a general Bayesian neural network """
     weights = {}
-    for i, neurons in enumerate(architecture):
-        weight_mean, bias_mean = 'W'+str(i)+'_mean', 'b'+str(i)+'_mean'
-        weight_logvar, bias_logvar = 'W'+str(i)+'_logvar', 'b'+str(i)+'_logvar'
-        if i == 0:
-            weights[weight_mean] = tf.Variable(xavier_initializer(n_in, architecture[i]), name=vname+weight_mean)
-            weights[weight_logvar] = tf.Variable(tf.fill([n_in, architecture[i]], initVar), name=vname+weight_logvar)
+    for layer, neurons in enumerate(n_hid):
+        weight_mean, bias_mean = 'W'+str(layer)+'_mean', 'b'+str(layer)+'_mean'
+        weight_logvar, bias_logvar = 'W'+str(layer)+'_logvar', 'b'+str(layer)+'_logvar'
+        if layer == 0:
+            weights[weight_mean] = tf.get_variable(shape=[n_in, n_hid[layer]], name=vname+weight_mean, initializer=xavier_initializer())
+            weights[weight_logvar] = tf.Variable(tf.fill([n_in,n_hid[layer]], initVar), name=vname+weight_logvar)
         else:
-            weights[weight_mean] = tf.Variable(xavier_initializer(architecture[i-1], architecture[i]), name=vname+weight_mean)
-            weights[weight_logvar] = tf.Variable(tf.fill([architecture[i-1], architecture[i]], initVar), name=vname+weight_logvar)
-        weights[bias_mean] = tf.Variable(tf.zeros(architecture[i]) + 1e-1, name=vname+bias_mean)
-        weights[bias_logvar] = tf.Variable(tf.fill([architecture[i]], initVar), name=vname+bias_logvar)
-    weights['Wout_mean'] = tf.Variable(xavier_initializer(architecture[-1], n_out), name=vname+'Wout_mean')
-    weights['Wout_logvar'] = tf.Variable(tf.fill([architecture[-1], n_out], initVar), name=vname+'Wout_logvar')
-    weights['bout_mean'] = tf.Variable(tf.zeros(n_out) + 1e-1, name=vname+'bout_mean')
-    weights['bout_logvar'] = tf.Variable(tf.fill([n_out], value = initVar), name=vname+'bout_logvar')
+            weights[weight_mean] = tf.get_variable(shape=[n_hid[layer-1], n_hid[layer]],name=vname+weight_mean, initializer=xavier_initializer())
+            weights[weight_logvar] = tf.Variable(tf.fill([n_hid[layer-1], n_hid[layer]], initVar), name=vname+weight_logvar)
+        weights[bias_mean] = tf.Variable(tf.zeros([n_hid[layer]]) + 1e-1, name=vname+bias_mean)
+        weights[bias_logvar] = tf.Variable(tf.fill([n_hid[layer]], initVar), name=vname+bias_logvar)
+    return weights    
+
+def initCatBNN(n_in, n_hid, n_out, vname, initVar=-5):
+    """ initialize a BNN with categorical output (classification """
+    weights = initBNN(n_in, n_hid, n_out, initVar, vname)
+    weights['Wout_mean'] = tf.get_variable(shape=[n_hid[-1], n_out], name=vname+'Wout_mean', initializer=xavier_initializer())
+    weights['Wout_logvar'] = tf.Variable(tf.fill([n_hid[-1], n_out], initVar), name=vname+'Wout_logvar')
+    weights['bout_mean'] = tf.Variable(tf.zeros([n_out]) + 1e-1, name=vname+'bout_mean')
+    weights['bout_logvar'] = tf.Variable(tf.fill([n_out], value=initVar), name=vname+'bout_logvar')
     return weights
 
-def _forward_pass_Cat_bnn(x, weights, q, n_h, nonlinearity, bn=False, training=True):
-    """ Forward pass through network with given weights - Categorical output """
-    return tf.nn.softmax(_forward_pass_Cat_logits_bnn(x, weights, q, n_h, nonlinearity, bn, training))
+def initGaussBNN(n_in, n_hid, n_out, vname, initVar=-5):
+    """ TODO: initialize a BNN with Gaussian output (regression) """
+    pass 
 
-def bayes_batch_norm(inputs, var_inputs, weights, q, layer, training, decay=0.99, epsilon=1e-3):
+def sampleBNN(weights, n_hid):
+    """ sample weights from a variational approximation """
+    wTilde = {}
+    for layer in range(len(n_hid)):
+	wName, bName = 'W'+str(layer), 'b'+str(layer)
+	meanW, meanB = weights['W'+str(layer)+'_mean'], weights['b'+str(layer)+'_mean']
+	logvarW, logvarB = weights['W'+str(layer)+'_logvar'], weights['b'+str(layer)+'_logvar']
+	wTilde[wName], wTilde[bName] = sampleNormal(meanW, logvarW), sampleNormal(meanB, logvarB)
+    return wTilde
+
+def sampleCatBNN(weights, n_hid):
+    """ return a sample from weights of a categorical BNN """
+    wTilde = sampleBNN(weights, n_hid)
+    meanW, meanB = weights['Wout_mean'], weights['bout_mean']
+    logvarW, logvarB = weights['Wout_logvar'], weights['bout_logvar']
+    wTilde['Wout'], wTilde['bout'] = sampleNormal(meanW, logvarW), sampleNormal(meanB, logvarB)
+    return wTilde
+
+def sampleGaussBNN(weights, n_hid):
+    """ return a sample from weights of a Gaussian BNN """
+    pass
+
+def klWBNN(q, W, n_hid, dist):
+    """ estimate KL(q(w)||p(w)) as logp(w) - logq(w) 
+	currently only p(w) = N(w;0,1) implemented """
+    l_pw, l_qw = 0,0
+    for layer, neurons in enumerate(n_hid):
+        w, b =  W['W'+str(layer)], W['b'+str(layer)]
+	wMean, bMean = q['W'+str(layer)+'_mean'], q['b'+str(layer)+'_mean']
+        wLv, bLv = q['W'+str(layer)+'_logvar'], q['b'+str(layer)+'_logvar']
+	l_pw += tf.reduce_sum(standardNormalLogDensity(w)) + tf.reduce_sum(standardNormalLogDensity(b))
+	l_qw += tf.reduce_sum(gaussianLogDensity(w,wMean,wLv)) + tf.reduce_sum(gaussianLogDensity(b,bMean,bLv))
+    return l_pw, l_qw
+
+def klBNN_exact(q, n_hid):
+    """ compute exact KL(q||N(0,1)) """
+    kl = 0
+    for layer, neurons in enumerate(n_hid):
+	wMean, bMean = q['W'+str(layer)+'_mean'], tf.expand_dims(q['b'+str(layer)+'_mean'],1)
+        wLv, bLv = q['W'+str(layer)+'_logvar'], tf.expand_dims(q['b'+str(layer)+'_logvar'],1)
+	kl += tf.reduce_sum(standardNormalKL(wMean, wLv)) + tf.reduce_sum(standardNormalKL(bMean, bLv))
+    return kl 
+    
+def klWCatBNN(q, W, n_hid, dist='Gaussian'):
+    """ estimate KL(q||p) as logp(w) - logq(w) for a categorical BNN """
+    l_pw, l_qw = klWBNN(q, W, n_hid, dist)
+    w, b = W['Wout'], W['bout']
+    wMean, bMean, wLv, bLv = q['Wout_mean'], q['bout_mean'], q['Wout_logvar'], q['bout_logvar']
+    l_pw += tf.reduce_sum(standardNormalLogDensity(w)) + tf.reduce_sum(standardNormalLogDensity(b))
+    l_qw += tf.reduce_sum(gaussianLogDensity(w,wMean,wLv)) + tf.reduce_sum(gaussianLogDensity(b,bMean,bLv))
+    return l_pw - l_qw
+
+def klWCatBNN_exact(q, n_hid):
+    """ compute exact KL(q||p) with standard normal p(w) for a categorical BNN """
+    kl = klBNN_exact(q, n_hid)
+    wMean, bMean = q['Wout_mean'], tf.expand_dims(q['bout_mean'],1)
+    wLv, bLv = q['Wout_logvar'], tf.expand_dims(q['bout_logvar'],1)
+    kl += tf.reduce_sum(standardNormalKL(wMean, wLv)) + tf.reduce_sum(standardNormalKL(bMean, bLv))
+    return kl
+
+def averageVarBNN(q, n_hid):
+    """ return the average (log) variance of variational distribution """
+    totalVar, numParams = 0,0
+    for layer in range(len(n_hid)):
+        variances = tf.reshape(q['W'+str(layer)+'_logvar'], [-1])
+        totalVar += tf.reduce_sum(tf.exp(variances))
+        numParams += tf.cast(tf.shape(variances)[0], dtype=tf.float32)
+        variances = tf.reshape(q['b'+str(layer)+'_logvar'], [-1])
+        totalVar += tf.reduce_sum(tf.exp(variances))
+        numParams += tf.cast(tf.shape(variances)[0], dtype=tf.float32)
+    variances = tf.reshape(q['Wout_logvar'], [-1])
+    totalVar += tf.reduce_sum(tf.exp(variances))
+    numParams += tf.cast(tf.shape(variances)[0], tf.float32)
+    variances = tf.reshape(q['bout_logvar'], [-1])
+    totalVar += tf.reduce_sum(tf.exp(variances))
+    numParams += tf.cast(tf.shape(variances)[0], dtype=tf.float32)    
+    return totalVar/numParams 	
+ 
+def bayesBatchNorm(inputs, var_inputs, weights, q, layer, training, decay=0.99, epsilon=1e-3):
+    """ TODO: implement correctly - BatchNorm for BNNs """
     layer = str(layer)
     if training==True:
         batch_mean, batch_var = tf.nn.moments(var_inputs,[0])
