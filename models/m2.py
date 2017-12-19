@@ -21,7 +21,7 @@ Inference network: q(z,y|x) = q(y|x) * q(z|y,x)
 class m2(model):
    
     def __init__(self, n_x, n_y, n_z=2, n_hid=[4], alpha=0.1, x_dist='Gaussian', nonlinearity=tf.nn.relu, batchnorm=False, l2_reg=0.3, mc_samples=1,ckpt=None):
-	
+	self.reg_term = tf.placeholder(tf.float32, shape=[], name='reg_term')
 	super(m2, self).__init__(n_x, n_y, n_z, n_hid, x_dist, nonlinearity, batchnorm, mc_samples, alpha, l2_reg, ckpt)
 
 
@@ -33,25 +33,25 @@ class m2(model):
 	self.create_placeholders()
 	self.initialize_networks()
 	## model variables and relations ##
-	# infernce #
+	# inference #
         self.y_ = dgm.forwardPassCatLogits(self.x, self.qy_x, self.n_hid, self.nonlinearity, self.bn, scope='qy_x', reuse=False)
 	self.qz_in = tf.concat([self.x, self.y], axis=-1) 
 	self.qz_mean, self.qz_lv, self.z_ = dgm.samplePassGauss(self.qz_in, self.qz_xy, self.n_hid, self.nonlinearity, self.bn, scope='qz_xy', reuse=False)
 	# generative #
-	self.z_prior = tf.random_normal([100, self.n_z])
+	self.z_prior = tf.random_normal([tf.shape(self.y)[0], self.n_z])
 	self.px_in = tf.concat([self.y, self.z_prior], axis=-1)
 	if self.x_dist == 'Gaussian':
 	    self.px_mean, self.px_lv, self.x_ = dgm.samplePassGauss(self.px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz', reuse=False)
 	elif self.x_dist == 'Bernoulli':
 	    self.x_ = dgm.forwardPassBernoulli(self.px_in, self.px_yz, self.n_hid, self.nonlinearity, self.bn, scope='px_yz', reuse=False)
-	self.predictions = self.predict(self.x)
+	self.predictions = self.predict(self.x, training=False)
 
     def compute_loss(self):
 	""" manipulate computed components and compute loss """
 	self.elbo_l = tf.reduce_mean(self.labeled_loss(self.x_l, self.y_l))
 	self.qy_ll = tf.reduce_mean(self.qy_loss(self.x_l, self.y_l))
 	self.elbo_u = tf.reduce_mean(self.unlabeled_loss(self.x_u))
-	weight_priors = self.l2_reg*self.weight_prior()/self.n_train	
+	weight_priors = self.l2_reg*self.weight_prior()/self.reg_term	
 	return -(self.elbo_l + self.elbo_u + self.alpha * self.qy_ll + weight_priors)
 
     def labeled_loss(self, x, y):
@@ -63,7 +63,7 @@ class m2(model):
     def unlabeled_loss(self, x):
 	qy_l = self.predict(x)
 	x_r = tf.tile(x, [self.n_y,1])
-	y_u = tf.reshape(tf.tile(tf.eye(self.n_y), [1, tf.shape(self.x_u)[0]]), [-1, self.n_y])
+	y_u = tf.reshape(tf.tile(tf.eye(self.n_y), [1, tf.shape(x)[0]]), [-1, self.n_y])
 	n_u = tf.shape(x)[0] 
 	lb_u = tf.transpose(tf.reshape(self.labeled_loss(x_r, y_u), [self.n_y, n_u]))
 	lb_u = tf.reduce_sum(qy_l * lb_u, axis=-1)
@@ -97,9 +97,9 @@ class m2(model):
 	    logits = tf.reshape(logits, [self.mc_samples, -1, self.n_x])
             return dgm.bernoulliLogDensity(x, logits) 
 
-    def predict(self, x):
+    def predict(self, x, training=True):
 	""" predict y for given x with q(y|x) """
-	return dgm.forwardPassCat(x, self.qy_x, self.n_hid, self.nonlinearity, self.bn, scope='qy_x') 
+	return dgm.forwardPassCat(x, self.qy_x, self.n_hid, self.nonlinearity, self.bn, training=training, scope='qy_x') 
 
     def encode(self, x, y=None, n_iters=100):
 	""" encode a new example into z-space (labeled or unlabeled) """
@@ -112,6 +112,14 @@ class m2(model):
 	y_ = self.predict(x)
 	acc =  tf.reduce_mean(tf.cast(tf.equal(tf.argmax(y_,axis=1), tf.argmax(y, axis=1)), tf.float32))
 	return acc 
+   
+    def training_fd(self, x_l, y_l, x_u):
+	return {self.x_l: x_l, self.y_l: y_l, self.x_u: x_u, self.x: x_l, self.y: y_l, self.reg_term:self.n_train}
+
+    def _printing_feed_dict(self, Data, x_l, x_u, y, eval_samps, binarize):
+        fd = super(m2,self)._printing_feed_dict(Data, x_l, x_u, y, eval_samps, binarize)
+        fd[self.reg_term] = self.n_train
+        return fd
 
     def initialize_networks(self):
     	""" Initialize all model networks """
@@ -128,10 +136,6 @@ class m2(model):
 	print("Epoch: {}: Total: {:5.3f}, Labeled: {:5.3f}, Unlabeled: {:5.3f}, Training: {:5.3f}, Testing: {:5.3f}".format(epoch, total, elbo_l, elbo_u, train_acc, test_acc))	
 
     def print_verbose2(self, epoch, fd, sess):
-	self.phase = False
-	zm_test, zlv_test, z_test = self.sample_(self.x_test,self.y_test)
-        zm_train, zlv_train, z_train = self.sample_z(self.x_train,self.y_train)
-        lpx_test, lpx_train, acc_train, acc_test = sess.run([self.compute_logpx(self.x_test, z_test, self.y_test),
-                                                                  self.compute_logpx(self.x_train, z_train, self.y_train),
-                                                                  self.train_acc, self.test_acc], feed_dict=fd)
-	print('Epoch: {}, logpx: {:5.3f}, Train: {:5.3f}, Test: {:5.3f}'.format(epoch, np.mean(lpx_train), np.mean(klz_train), acc_train, acc_test ))
+	total, elbo_l, elbo_u = sess.run([self.compute_loss(), self.elbo_l, self.elbo_u] ,fd)
+	train_acc, test_acc = sess.run([self.train_acc, self.test_acc], fd)	
+	print("Epoch: {}: Total: {:5.3f}, Labeled: {:5.3f}, Unlabeled: {:5.3f}, Training: {:5.3f}, Testing: {:5.3f}".format(epoch, total, elbo_l, elbo_u, train_acc, test_acc))	
