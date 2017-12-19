@@ -13,8 +13,8 @@ from data import half_moon_loader
 from models.m2 import m2
 from models.adgm import adgm
 from models.sdgm import sdgm
-from models.msdgm import msdgm
-from models.bsdgm import bsdgm
+from models.blendedv2 import blended
+from models.b_blended import b_blended
 
 ### Script to run a toy moons experiment with generative SSL models ###
 
@@ -51,9 +51,9 @@ n_epochs = 15
 x_dist = 'Gaussian'
 temp_epochs, start_temp = None, 0.0
 l2_reg, initVar = 1., -8.0	
-batchnorm, mc_samps = True, 10
-alpha, eval_samps = 2., None
-binarize, logging, verbose = False, False, 1
+batchnorm, mc_samps = True, 3
+alpha, beta = 2., 0.02
+binarize, logging, verbose = False, False, 2
 
 
 if modelName == 'm2':
@@ -68,35 +68,22 @@ elif modelName == 'sdgm':
     # skip DGM: Maaloe et al. (2016)
     model = sdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
-elif modelName == 'msdgm':
-    # modified sdgm (copied classifier p(y|x,a)
-    model = msdgm(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+elif modelName == 'blended':
+    # blending discriminative and generative models: unpublished
+    model = blended(n_x, n_y, n_z, n_hidden, x_dist=x_dist, beta=beta, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 
-elif modelName == 'sslpe':
-    # sslpe: Gordon and Hernandez-Lobato (2017)
-    model = sslpe(n_x, n_y, n_z, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
-
-elif modelName == 's_sslpe':
-    # skip sslpe: unpublished
-    model = skip_sslpe(n_x, n_y, n_z, n_a, n_hidden, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
-
-elif modelName == 'bsdgm':
-    # SDGM with Bayesian additional classifier: unpublished
-    model = bsdgm(n_x, n_y, n_z, n_a, n_hidden, initVar=initVar, x_dist=x_dist, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
+elif modelName == 'b_blended':
+    # blending discriminative and generative models: unpublished
+    model = b_blended(n_x, n_y, n_z, n_hidden, initVar=initVar, x_dist=x_dist, beta=beta, alpha=alpha, batchnorm=batchnorm, mc_samples=mc_samps, l2_reg=l2_reg)
 	
 
 # Train model and measure performance on test set
-model.train(data, n_epochs, l_bs, u_bs, lr, eval_samps=eval_samps, temp_epochs=temp_epochs, start_temp=start_temp, binarize=binarize, logging=logging, verbose=verbose)
+model.train(data, n_epochs, l_bs, u_bs, lr, temp_epochs=temp_epochs, start_temp=start_temp, binarize=binarize, logging=logging, verbose=verbose)
 
-#sys.exit()
 preds_test = model.predict_new(data.data['x_test'].astype('float32'))
 acc, ll = np.mean(np.argmax(preds_test,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test)
 print('Test Accuracy: {:5.3f}, Test log-likelihood: {:5.3f}'.format(acc, ll))
 
-if modelName=='b_sdgm':
-    preds_test_q = model.predict_new_q(data.data['x_test'].astype('float32'))
-    acc, ll = np.mean(np.argmax(preds_test_q,1)==np.argmax(data.data['y_test'],1)), -log_loss(data.data['y_test'], preds_test_q)
-    print('Test Accuracy (q): {:5.3f}, Test log-likelihood (q): {:5.3f}'.format(acc, ll))
 
 
 ## Visualize predictions

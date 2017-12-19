@@ -16,7 +16,6 @@ y - np array: N rows, k columns (one-hot encoding)
 class SSL_DATA:
     """ Class for appropriate data structures """
     def __init__(self, x, y, x_test=None, y_test=None, x_labeled=None, y_labeled=None, train_proportion=0.7, labeled_proportion=0.3, dataset='moons', seed=None):
-	
 	self.INPUT_DIM = x.shape[1]
 	self.NUM_CLASSES = y.shape[1]
 	self.NAME = dataset

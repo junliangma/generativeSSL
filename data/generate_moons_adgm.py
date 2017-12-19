@@ -52,14 +52,14 @@ def load_semi_supervised(noise=0.2):
         train_x_l = np.zeros((6, 2))
         train_t_l = np.array([0, 0, 0, 1, 1, 1])
 	# Top halfmoon
-        train_x_l[0] = [.7, 1.7]   # left
-        train_x_l[1] = [1.6, 2.6]  # middle
-        train_x_l[2] = [2.7, 1.7]  # right
+        train_x_l[0] = [-.9, .25]   # left
+        train_x_l[1] = [0.1, 1.]  # middle
+        train_x_l[2] = [.9, .25]  # right
 
         # Bottom halfmoon
-        train_x_l[3] = [1.6, 2.0]  # left
-        train_x_l[4] = [2.7, 1.1]  # middle
-        train_x_l[5] = [3.5, 2.0]  # right
+        train_x_l[3] = [0.1, .25]  # left
+        train_x_l[4] = [.9, -.5]  # middle
+        train_x_l[5] = [1.9, .25]  # right
         train_set_labeled = (train_x_l, train_t_l)
 	
     elif noise==0.1:
