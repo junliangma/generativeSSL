@@ -24,6 +24,7 @@ from models.b_blended import b_blended
 ## argv[3] - noise level in moons dataset / Threshold for reduction in mnist
 ## argv[4] - model to use (m2, adgm, sdgm, sslpe, b_sdgm, msdgm)
 ## argv[5] - number of runs per beta
+## argv[6] - number of MC samples
 
 # Experiment parameters
 num_labeled, threshold = int(sys.argv[1]), float(sys.argv[3])
@@ -42,7 +43,7 @@ n_epochs = 200
 x_dist = 'Bernoulli'
 temp_epochs, start_temp = None, 0.0
 l2_reg, initVar, alpha = .5, -10., 1.1
-batchnorm, mc_samps = True, 1
+batchnorm, mc_samps = True, int(sys.argv[6])
 eval_samps = 1000
 binarize, logging, verbose = True, False, 2
 
