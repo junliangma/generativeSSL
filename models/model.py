@@ -40,7 +40,6 @@ class model(object):
 	self.data_init(Data, eval_samps, l_bs, u_bs)
 	self.lr = self.set_learning_rate(lr)
 	self.schedule = self.set_schedule(temp_epochs, start_temp, n_epochs)
-	self.beta = tf.Variable(self.schedule[0], trainable=False, name='beta')
         ## define optimizer
 	optimizer = tf.train.AdamOptimizer(learning_rate=self.lr)
 	gvs = optimizer.compute_gradients(self.loss)
@@ -49,13 +48,10 @@ class model(object):
 	with tf.control_dependencies(update_ops):
 	    self.optimizer = optimizer.apply_gradients(capped_gvs, global_step=self.global_step) 
 	
-	#update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-	#with tf.control_dependencies(update_ops):
-        #    self.optimizer = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
-	
 	self.compute_accuracies()
 	self.train_acc = self.compute_acc(self.x_train, self.y_train)
 	self.test_acc = self.compute_acc(self.x_test, self.y_test)
+	self.train_curve, self.test_curve = [],[] 
 
         ## initialize session and train
         max_acc, epoch, step = 0, 0, 0
@@ -66,18 +62,22 @@ class model(object):
                 writer = tf.summary.FileWriter(self.LOGDIR, sess.graph)
 
             while epoch < n_epochs:
-                self.phase=True
                 x_labeled, labels, x_unlabeled, _ = Data.next_batch(l_bs, u_bs)
                 if binarize == True:
                     x_labeled, x_unlabeled = self.binarize(x_labeled), self.binarize(x_unlabeled)
-                _, loss_batch = sess.run([self.optimizer, self.loss],
-                                           feed_dict={self.x_l: x_labeled, self.y_l: labels,
-                                           	self.x_u: x_unlabeled, self.x: x_labeled,
-                                           	self.y: labels})
-                if logging:
+		fd = self.training_fd(x_labeled, labels, x_unlabeled)
+		####
+		#x,y = self.x_l, self.y_l
+		#pdb.set_trace()
+		####
+                _, loss_batch = sess.run([self.optimizer, self.loss],fd)
+		self.anneal_params()               
+		if logging:
 		    writer.add_summary(summary_elbo, global_step=self.global_step)
 
                 if Data._epochs_unlabeled > epoch:
+		    self.train_curve.append(sess.run(self.train_acc, {self.x_train:Data.data['x_train'], self.y_train:Data.data['y_train']}))
+		    self.test_curve.append(sess.run(self.test_acc, {self.x_test:Data.data['x_test'], self.y_test:Data.data['y_test']}))
                     epoch += 1
                     fd = self._printing_feed_dict(Data, x_labeled, x_unlabeled, labels, eval_samps, binarize)
 		    saver.save(sess, self.ckpt_dir, global_step=step+1)
@@ -85,7 +85,8 @@ class model(object):
                         self.print_verbose1(epoch, fd, sess)
 		    elif verbose == 2:
                         self.print_verbose2(epoch, fd, sess)
-
+	    self.train_curve = np.array(self.train_curve)
+	    self.test_curve = np.array(self.test_curve)
             if logging:
                 writer.close()
 
@@ -104,9 +105,16 @@ class model(object):
         with tf.Session() as session:
             ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
             saver.restore(session, ckpt.model_checkpoint_path)
-            self.phase = False
             preds = session.run(self.predictions, {self.x:x})
         return preds
+
+    def generate_new(self, n_samps, y=None, z=None):
+        saver = tf.train.Saver()
+        with tf.Session() as session:
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            saver.restore(session, ckpt.model_checkpoint_path)
+            data = session.run(self.generateX(n_samps, y, z))
+        return data
 
 ### Every instance of model must implement these two methods ###
 
@@ -171,8 +179,7 @@ class model(object):
         self.n_u = data.NUM_UNLABELED          # number of unlabeled instances
         self.data_name = data.NAME             # dataset being used   
         self._allocate_directory()             # logging directory
-        self.alpha *= self.n_train/self.n_l    # weighting for additional term
-
+        self.alpha *= tf.constant(self.n_train/self.n_l)    # weighting for additional term
 
     def create_placeholders(self):
         """ Create input/output placeholders """
@@ -185,11 +192,13 @@ class model(object):
         self.y_train = tf.placeholder(tf.float32, shape=[None, self.n_y], name='y_train')
         self.y_test = tf.placeholder(tf.float32, shape=[None, self.n_y], name='y_test')
         self.y = tf.placeholder(tf.float32, shape=[None, self.n_y], name='y')
-	self.phase = True 
 
     def compute_accuracies(self):
         self.train_acc = self.compute_acc(self.x_train, self.y_train)
 	self.test_acc = self.compute_acc(self.x_test, self.y_test)
+
+    def training_fd(self, x_l, y_l, x_u):
+	return {self.x_l: x_l, self.y_l: y_l, self.x_u: x_u, self.x: x_l, self.y: y_l}
 
     def _printing_feed_dict(self, Data, x_l, x_u, y, eval_samps, binarize):
 	x_train, y_train = Data.sample_train(eval_samps)
@@ -254,5 +263,5 @@ class model(object):
 ###########################################
 
 
-
-
+    def anneal_params(self):
+	pass
