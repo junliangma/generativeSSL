@@ -98,7 +98,7 @@ for betaNum, beta in enumerate(betaset):
 nl = num_labeled
 test_ac, test_ll = np.array(test_ac), np.array(test_ll)
 np.save('./output/fashion/'+modelName+'_nl'+str(nl)+'_mc'+str(mc_samps)+'_test_loglikelihood.npy', test_ll)
-np.save('./output/fashion/'+modelName+'_nl'+str(nl)'_mc'+str(mc_samps)+'_test_accuracy.npy', test_ac)
+np.save('./output/fashion/'+modelName+'_nl'+str(nl)+'_mc'+str(mc_samps)+'_test_accuracy.npy', test_ac)
 
 
 
