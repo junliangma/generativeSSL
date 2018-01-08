@@ -122,7 +122,7 @@ def initTiedNetwork(nn1, n_hid, vname, n_type):
         weights['Wmean'] = tf.add(nn1['Wmean'], weights['eps_Wmean'], name=vname+'Wmean')
         weights['bmean'] = tf.add(nn1['bmean'], weights['eps_bmean'], name=vname+'bmean')
         weights['Wvar'] = tf.add(nn1['Wvar'], weights['eps_Wvar'], name=vname+'Wvar')
-        weights['bvar'] = tf.add(nn1['Wvar'], weights['eps_Wvar'], name=vname+'Wvar')
+        weights['bvar'] = tf.add(nn1['bvar'], weights['eps_bvar'], name=vname+'bvar')
     elif n_type=='Categorical':
 	weights['eps_Wout'] = tf.get_variable(shape=nn1['Wout'].shape, name=vname+'eps_Wout', initializer=initNormal)
 	weights['eps_bout'] = tf.get_variable(shape=nn1['bout'].shape, name=vname+'eps_bout', initializer=initNormal)
